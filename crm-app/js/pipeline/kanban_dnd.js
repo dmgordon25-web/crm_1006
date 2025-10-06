@@ -1,3 +1,5 @@
+import { NORMALIZE_STAGE } from '/js/pipeline/stages.js';
+
 let WIRED = false;
 let WIRED_BOARD = null;
 
@@ -78,8 +80,8 @@ function scheduleFlush(){
 }
 
 async function persistStage(contactId, newStage){
-  const st = normStage(newStage);
-  if(!contactId || !st) return false;
+  if(!contactId || !newStage) return false;
+  const st = NORMALIZE_STAGE(newStage);
 
   const scope = (typeof window !== 'undefined' && window) ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
   let dbm = null;
@@ -131,7 +133,7 @@ async function persistStage(contactId, newStage){
     row = null;
   }
   if(!row) return false;
-  if(normStage(row.stage) === st) return true;
+  if(NORMALIZE_STAGE(row.stage) === st) return true;
 
   row.stage = st;
   row.updatedAt = Date.now();
