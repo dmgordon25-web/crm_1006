@@ -1,6 +1,4 @@
 // patch_2025-09-26_phase1_pipeline_partners.js — Phase 1 pipeline lanes + partner core
-import { hide } from './patch_2025-10-02_baseline_ux_cleanup.js';
-
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_2025_09_26_phase1_pipeline_partners) return;
@@ -320,12 +318,37 @@ import { hide } from './patch_2025-10-02_baseline_ux_cleanup.js';
     renderLeaderboard();
   }
 
+  function removeLegacyControls(){
+    const card = document.getElementById('kanban-card');
+    if(!card) return;
+    const controls = card.querySelector('.kanban-controls');
+    if(controls) controls.remove();
+    const refresh = card.querySelector('#kanban-refresh, #kb-reload');
+    if(refresh){
+      const container = refresh.closest('.kanban-controls');
+      refresh.remove();
+      if(container && container.childElementCount === 0) container.remove();
+    }
+    const toggle = card.querySelector('#show-clients-lane, #kb-show-clients');
+    if(toggle){
+      const wrap = toggle.closest('label, .switch');
+      if(wrap){
+        const parent = wrap.parentElement;
+        wrap.remove();
+        if(parent && parent.classList && parent.classList.contains('kanban-controls') && parent.childElementCount === 0){
+          parent.remove();
+        }
+      }else{
+        toggle.remove();
+      }
+    }
+  }
+
   function ensureBoard(){
     const host = document.getElementById('kanban-area');
     if(!host) return null;
+    removeLegacyControls();
     host.dataset.phase1 = 'true';
-    hide('#kanban-refresh');
-    hide('#show-clients-lane');
     let columns = host.querySelector('.phase1-columns');
     if(!columns){
       host.innerHTML = '';

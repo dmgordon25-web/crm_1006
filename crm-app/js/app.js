@@ -32,40 +32,6 @@
     }
   })();
 
-  (function prunePipelineChrome(){
-    if (window.__WIRED_PIPELINE_PRUNE__) return; window.__WIRED_PIPELINE_PRUNE__ = true;
-    function hideByText(root, text){
-      const it = Array.from(root.querySelectorAll('button, label, span, a')).find((n) => ((n.textContent)||'').trim().toLowerCase() === text);
-      if (it){
-        const container = it.closest('*');
-        if (container && container.style){
-          container.style.display = 'none';
-        }
-      }
-    }
-    function run(){
-      const shell = document.getElementById('view-pipeline') || document.querySelector('[data-view="pipeline"]');
-      if (!shell) return;
-      hideByText(shell, 'show clients lane');
-      hideByText(shell, 'refresh');
-      const strayCheckbox = shell.querySelector('input[type="checkbox"]');
-      if (strayCheckbox){
-        const label = strayCheckbox.closest('label');
-        if (label && label.style){
-          label.style.display = 'none';
-        }
-      }
-    }
-    if (document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', run, { once:true });
-    } else {
-      run();
-    }
-    if (window.RenderGuard && typeof window.RenderGuard.registerHook === 'function'){
-      try { window.RenderGuard.registerHook(() => run()); } catch(_){ }
-    }
-  })();
-
   (function wireDashboardDnD(){
     if (window.__DASH_DND__) return; window.__DASH_DND__ = true;
 
