@@ -1,0 +1,5 @@
+{
+  "preferBrowser": "system",
+  "portBase": 8080,
+  "portMax": 8099
+}

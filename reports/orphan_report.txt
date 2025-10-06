@@ -1,0 +1,18 @@
+# Sweep Report
+
+Application root: crm-app
+
+## Unreferenced Modules
+- None
+
+## Duplicate app:data:changed listeners
+- None
+
+## Suspicious ellipsis characters
+- None
+
+## Legacy roots detected
+- None
+
+## Legacy calendar/grid markers
+- None
