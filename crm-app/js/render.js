@@ -1,5 +1,12 @@
 // render.js — clean
 import { STR, text as translate } from './ui/strings.js';
+import {
+  PIPELINE_STAGES,
+  PIPELINE_STAGE_KEYS,
+  NORMALIZE_STAGE,
+  stageKeyFromLabel,
+  stageLabelFromKey,
+} from './pipeline/stages.js';
 
 (function(){
   const NONE_PARTNER_ID = '00000000-0000-none-partner-000000000000';
@@ -81,41 +88,33 @@ import { STR, text as translate } from './ui/strings.js';
 
   window.__OLD_KANBAN_OFF__ = true;
 
-  const KANBAN_STAGE_NAMES = ['New','Application','Pre-Approved','Processing','Underwriting','Approved','CTC','Funded','Clients'];
-  const KANBAN_STAGE_ALIASES = {
-    'lead':'New',
-    'new lead':'New',
-    'new':'New',
-    'application':'Application',
-    'applications':'Application',
-    'app':'Application',
-    'pre-app':'Pre-Approved',
-    'pre app':'Pre-Approved',
-    'preapproved':'Pre-Approved',
-    'pre approved':'Pre-Approved',
-    'pre-approval':'Pre-Approved',
-    'processing':'Processing',
-    'underwriting':'Underwriting',
-    'approved':'Approved',
-    'clear to close':'CTC',
-    'clear-to-close':'CTC',
-    'ctc':'CTC',
-    'funded':'Funded',
-    'funding':'Funded',
-    'client':'Clients',
-    'clients':'Clients'
-  };
+  const KANBAN_STAGE_LABELS = PIPELINE_STAGES.slice();
+  const KANBAN_STAGE_KEYS = PIPELINE_STAGE_KEYS.slice();
+  const KANBAN_STAGE_LABEL_SET = new Set(KANBAN_STAGE_LABELS.map(label => label.toLowerCase()));
+  const KANBAN_STAGE_KEY_SET = new Set(KANBAN_STAGE_KEYS);
+  const KANBAN_STAGE_KEY_TO_LABEL = new Map(
+    KANBAN_STAGE_KEYS.map((key, index) => [key, KANBAN_STAGE_LABELS[index]])
+  );
 
   function canonicalKanbanStage(value){
     if(value == null) return null;
     const raw = String(value).trim();
     if(!raw) return null;
-    const lower = raw.toLowerCase();
-    if(Object.prototype.hasOwnProperty.call(KANBAN_STAGE_ALIASES, lower)){
-      return KANBAN_STAGE_ALIASES[lower];
+    const lowered = raw.toLowerCase();
+    if(KANBAN_STAGE_KEY_SET.has(lowered)){
+      return stageLabelFromKey(lowered);
     }
-    const direct = KANBAN_STAGE_NAMES.find(name => name.toLowerCase() === lower);
-    return direct || null;
+    const direct = KANBAN_STAGE_LABELS.find(label => label.toLowerCase() === lowered);
+    if(direct) return direct;
+    const normalized = NORMALIZE_STAGE(raw);
+    if(normalized && KANBAN_STAGE_LABEL_SET.has(normalized.toLowerCase())){
+      return normalized;
+    }
+    const key = stageKeyFromLabel(raw);
+    if(KANBAN_STAGE_KEY_SET.has(key)){
+      return KANBAN_STAGE_KEY_TO_LABEL.get(key) || stageLabelFromKey(key);
+    }
+    return null;
   }
 
   function deriveLaneStage(node){
@@ -150,12 +149,21 @@ import { STR, text as translate } from './ui/strings.js';
       let stage = canonicalKanbanStage(lane.dataset.stage);
       if(!stage) stage = deriveLaneStage(lane);
       if(!stage) return;
+      const stageKey = stageKeyFromLabel(stage);
       if(lane.dataset.stage !== stage) lane.dataset.stage = stage;
+      if(lane.dataset.stageKey !== stageKey) lane.dataset.stageKey = stageKey;
+      if(lane.dataset.stageLabel !== stage) lane.dataset.stageLabel = stage;
       if(!lane.hasAttribute('data-stage')) lane.setAttribute('data-stage', stage);
+      if(!lane.hasAttribute('data-stage-key')) lane.setAttribute('data-stage-key', stageKey);
+      if(!lane.hasAttribute('data-stage-label')) lane.setAttribute('data-stage-label', stage);
       const list = lane.querySelector('[data-role="list"],[data-list],.kanban-drop,.kanban-list,.lane-list,.cards');
       if(list){
         if(list.dataset.stage !== stage) list.dataset.stage = stage;
+        if(list.dataset.stageKey !== stageKey) list.dataset.stageKey = stageKey;
+        if(list.dataset.stageLabel !== stage) list.dataset.stageLabel = stage;
         if(!list.hasAttribute('data-stage')) list.setAttribute('data-stage', stage);
+        if(!list.hasAttribute('data-stage-key')) list.setAttribute('data-stage-key', stageKey);
+        if(!list.hasAttribute('data-stage-label')) list.setAttribute('data-stage-label', stage);
       }
     });
     const cards = Array.from(root.querySelectorAll('[data-card-id],[data-id]'));
@@ -312,16 +320,19 @@ import { STR, text as translate } from './ui/strings.js';
     return Number.isFinite(num) ? num : null;
   }
 
+  const DEFAULT_STAGE_KEY = stageKeyFromLabel('Application');
+
   function normalizeStageKey(value){
     const raw = value == null ? '' : value;
+    const stringValue = String(raw);
     try{
       if(typeof window.canonicalizeStage === 'function'){
-        return window.canonicalizeStage(raw);
+        const canonical = window.canonicalizeStage(raw);
+        if(canonical) return String(canonical);
       }
     }catch(_err){}
-    const base = String(raw).trim().toLowerCase();
-    if(!base) return 'application';
-    return base.replace(/\s+/g, '-');
+    if(!stringValue.trim()) return DEFAULT_STAGE_KEY;
+    return stageKeyFromLabel(stringValue);
   }
 
   function uniqueAdd(map, key, id){

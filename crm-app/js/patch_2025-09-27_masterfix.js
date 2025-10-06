@@ -370,22 +370,24 @@ export const __esModule = true;
   function laneKeyFromStage(stage){
     const canonical = canonicalStageKey(stage);
     switch(canonical){
-      case 'lead': return 'lead';
-      case 'preapproved': return 'pre-app';
+      case 'lead':
+      case 'long-shot':
+        return 'long-shot';
+      case 'preapproved':
+        return 'preapproved';
       case 'application':
       case 'processing':
       case 'underwriting':
+      case 'approved':
+      case 'cleared-to-close':
       case 'funded':
       case 'post-close':
       case 'nurture':
       case 'lost':
       case 'denied':
         return canonical;
-      case 'approved':
-      case 'cleared-to-close':
-        return 'ctc';
-      case 'long-shot':
-        return 'lead';
+      case 'ctc':
+        return 'cleared-to-close';
       default:
         return 'application';
     }

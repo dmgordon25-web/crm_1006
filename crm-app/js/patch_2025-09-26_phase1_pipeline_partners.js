@@ -1,4 +1,6 @@
 // patch_2025-09-26_phase1_pipeline_partners.js — Phase 1 pipeline lanes + partner core
+import { NORMALIZE_STAGE, stageKeyFromLabel, stageLabelFromKey, PIPELINE_STAGE_KEYS } from '/js/pipeline/stages.js';
+
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_2025_09_26_phase1_pipeline_partners) return;
@@ -7,49 +9,8 @@
     window.__PATCHES_LOADED__.push('/js/patch_2025-09-26_phase1_pipeline_partners.js');
   }
 
-  const STATUSES = ['New','Application','Pre-Approved','Processing','Underwriting','Approved','CTC','Funded'];
-  const STATUS_TO_LANE = {
-    'New': 'new',
-    'Application': 'application',
-    'Pre-Approved': 'preapproved',
-    'Processing': 'processing',
-    'Underwriting': 'underwriting',
-    'Approved': 'approved',
-    'CTC': 'cleared-to-close',
-    'Funded': 'funded'
-  };
-  const STAGE_TO_LANE = {
-    'lead': STATUS_TO_LANE['New'],
-    'new': STATUS_TO_LANE['New'],
-    'prospect': STATUS_TO_LANE['New'],
-    'long-shot': STATUS_TO_LANE['New'],
-    'application': STATUS_TO_LANE['Application'],
-    'nurture': STATUS_TO_LANE['Application'],
-    'preapproved': STATUS_TO_LANE['Pre-Approved'],
-    'pre-app': STATUS_TO_LANE['Pre-Approved'],
-    'processing': STATUS_TO_LANE['Processing'],
-    'underwriting': STATUS_TO_LANE['Underwriting'],
-    'approved': STATUS_TO_LANE['Approved'],
-    'cleared-to-close': STATUS_TO_LANE['CTC'],
-    'ctc': STATUS_TO_LANE['CTC'],
-    'funded': STATUS_TO_LANE['Funded'],
-    'post-close': STATUS_TO_LANE['Funded'],
-    'closed': STATUS_TO_LANE['Funded'],
-    'lost': STATUS_TO_LANE['Application'],
-    'denied': STATUS_TO_LANE['Application']
-  };
-  const LANE_TO_STAGE = {
-    [STATUS_TO_LANE['New']]: 'lead',
-    [STATUS_TO_LANE['Application']]: 'application',
-    [STATUS_TO_LANE['Pre-Approved']]: 'preapproved',
-    [STATUS_TO_LANE['Processing']]: 'processing',
-    [STATUS_TO_LANE['Underwriting']]: 'underwriting',
-    [STATUS_TO_LANE['Approved']]: 'approved',
-    [STATUS_TO_LANE['CTC']]: 'cleared-to-close',
-    [STATUS_TO_LANE['Funded']]: 'funded'
-  };
-  const LANE_ORDER = STATUSES.map(label => STATUS_TO_LANE[label]);
-  const LANE_LABELS = Object.fromEntries(STATUSES.map(label => [STATUS_TO_LANE[label], label]));
+  const LANE_ORDER = PIPELINE_STAGE_KEYS.slice();
+  const LANE_LABELS = Object.fromEntries(LANE_ORDER.map(key => [key, stageLabelFromKey(key)]));
   const LOSS_REASONS = ['no-docs','rate','competitor','credit','withdrew','other'];
   const LOSS_REASON_LABELS = {
     'no-docs':'Missing Documents',
@@ -80,37 +41,105 @@
   let queuedDetail = null;
   const PIPELINE_LANE_PREFIX = 'pipeline:';
   const PIPELINE_LANE_SET = new Set(LANE_ORDER);
+  const DEFAULT_LANE = LANE_ORDER[0];
+  const LONG_SHOT = stageKeyFromLabel('Long Shot');
+  const APPLICATION = stageKeyFromLabel('Application');
+  const PRE_APPROVED = stageKeyFromLabel('Pre-Approved');
+  const PROCESSING = stageKeyFromLabel('Processing');
+  const UNDERWRITING = stageKeyFromLabel('Underwriting');
+  const APPROVED = stageKeyFromLabel('Approved');
+  const CTC = stageKeyFromLabel('CTC');
+  const FUNDED = stageKeyFromLabel('Funded');
 
-  function fallbackCanonical(value){
-    const raw = String(value==null?'':value).toLowerCase().trim();
-    if(!raw) return raw;
-    return raw.replace(/[\s_]+/g,'-').replace(/-+/g,'-');
+  const LEGACY_STAGE_ALIASES = new Map();
+  function registerStageAlias(value, laneKey){
+    const raw = String(value==null?'':value).trim();
+    if(!raw) return;
+    const lowered = raw.toLowerCase();
+    LEGACY_STAGE_ALIASES.set(lowered, laneKey);
+    const squished = lowered.replace(/[^a-z0-9]+/g,'');
+    if(squished && !LEGACY_STAGE_ALIASES.has(squished)) LEGACY_STAGE_ALIASES.set(squished, laneKey);
   }
+
+  [
+    ['lead', LONG_SHOT],
+    ['leads', LONG_SHOT],
+    ['longshot', LONG_SHOT],
+    ['long shot', LONG_SHOT],
+    ['new lead', LONG_SHOT],
+    ['prospect', LONG_SHOT],
+    ['buyer-lead', LONG_SHOT],
+    ['application', APPLICATION],
+    ['application-started', APPLICATION],
+    ['nurture', APPLICATION],
+    ['preapproved', PRE_APPROVED],
+    ['pre approved', PRE_APPROVED],
+    ['pre-approved', PRE_APPROVED],
+    ['preapproval', PRE_APPROVED],
+    ['pre-approval', PRE_APPROVED],
+    ['pre-app', PRE_APPROVED],
+    ['pre app', PRE_APPROVED],
+    ['preapp', PRE_APPROVED],
+    ['pre application', PRE_APPROVED],
+    ['pre-application', PRE_APPROVED],
+    ['processing', PROCESSING],
+    ['underwriting', UNDERWRITING],
+    ['under write', UNDERWRITING],
+    ['under-write', UNDERWRITING],
+    ['uw', UNDERWRITING],
+    ['approved', APPROVED],
+    ['ctc', CTC],
+    ['clear to close', CTC],
+    ['clear-to-close', CTC],
+    ['clear to-close', CTC],
+    ['cleared to close', CTC],
+    ['cleared-to-close', CTC],
+    ['clear2close', CTC],
+    ['clear 2 close', CTC],
+    ['funded', FUNDED],
+    ['funded/closed', FUNDED],
+    ['post close', FUNDED],
+    ['post-close', FUNDED],
+    ['closed', FUNDED],
+    ['clients', FUNDED],
+    ['client', FUNDED],
+    ['past client', FUNDED],
+    ['past clients', FUNDED]
+  ].forEach(([alias, lane]) => registerStageAlias(alias, lane));
+
   function canonicalizeStage(value){
-    if(window.PipelineStages && typeof window.PipelineStages.stageKeyFromLabel === 'function'){
-      const mapped = window.PipelineStages.stageKeyFromLabel(value);
-      if(mapped) return mapped;
-    }
-    const raw = String(value==null?'':value).trim().toLowerCase();
-    if(!raw) return fallbackCanonical(value) || 'application';
-    if(raw==='lead' || raw==='leads' || raw==='new-lead') return 'lead';
-    if(raw==='pre-app' || raw==='preapp' || raw==='pre application' || raw==='pre-application') return 'preapproved';
-    if(raw==='buyer-lead') return 'lead';
-    return fallbackCanonical(value) || raw;
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const raw = String(rawValue==null?'':rawValue).trim();
+    if(!raw) return DEFAULT_LANE;
+    const lowered = raw.toLowerCase();
+    if(PIPELINE_LANE_SET.has(lowered)) return lowered;
+    if(LEGACY_STAGE_ALIASES.has(lowered)) return LEGACY_STAGE_ALIASES.get(lowered);
+    const dashed = lowered.replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-+|-+$/g,'');
+    if(PIPELINE_LANE_SET.has(dashed)) return dashed;
+    if(LEGACY_STAGE_ALIASES.has(dashed)) return LEGACY_STAGE_ALIASES.get(dashed);
+    const squished = lowered.replace(/[^a-z0-9]+/g,'');
+    if(LEGACY_STAGE_ALIASES.has(squished)) return LEGACY_STAGE_ALIASES.get(squished);
+    if(lowered==='lost' || lowered==='denied') return lowered;
+    const normalizedLabel = NORMALIZE_STAGE(raw);
+    const normalizedKey = stageKeyFromLabel(normalizedLabel);
+    if(PIPELINE_LANE_SET.has(normalizedKey)) return normalizedKey;
+    if(LEGACY_STAGE_ALIASES.has(normalizedKey)) return LEGACY_STAGE_ALIASES.get(normalizedKey);
+    return DEFAULT_LANE;
   }
 
   function laneKeyFromStage(stage){
     const canonical = canonicalizeStage(stage);
-    if(Object.prototype.hasOwnProperty.call(STAGE_TO_LANE, canonical)){
-      return STAGE_TO_LANE[canonical];
-    }
-    return STATUS_TO_LANE['Application'];
+    if(PIPELINE_LANE_SET.has(canonical)) return canonical;
+    if(canonical==='lost' || canonical==='denied') return APPLICATION;
+    const mapped = LEGACY_STAGE_ALIASES.get(canonical);
+    if(mapped && PIPELINE_LANE_SET.has(mapped)) return mapped;
+    return DEFAULT_LANE;
   }
   function stageForLane(lane){
-    if(Object.prototype.hasOwnProperty.call(LANE_TO_STAGE, lane)){
-      return LANE_TO_STAGE[lane];
-    }
-    return canonicalizeStage(lane || 'application');
+    const canonical = canonicalizeStage(lane || APPLICATION);
+    if(PIPELINE_LANE_SET.has(canonical)) return canonical;
+    if(canonical==='lost' || canonical==='denied') return canonical;
+    return APPLICATION;
   }
 
   function ensureStyle(){
@@ -174,12 +203,10 @@
 
   function stageEntryTimestamp(contact, lane){
     if(!contact) return null;
-    const normalizedLane = typeof lane === 'string' ? lane : '';
-    const key = normalizedLane === STATUS_TO_LANE['CTC']
-      ? 'cleared-to-close'
-      : normalizedLane === STATUS_TO_LANE['Pre-Approved']
-        ? 'preapproved'
-        : canonicalizeStage(contact.stage);
+    const normalizedLane = typeof lane === 'string' ? canonicalizeStage(lane) : '';
+    const key = PIPELINE_LANE_SET.has(normalizedLane)
+      ? stageForLane(normalizedLane)
+      : canonicalizeStage(contact.stage);
     const map = contact.stageEnteredAt || {};
     const raw = map[key];
     if(typeof raw === 'number') return raw;
