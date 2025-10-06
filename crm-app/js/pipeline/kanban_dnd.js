@@ -133,7 +133,8 @@ async function persistStage(contactId, newStage){
     row = null;
   }
   if(!row) return false;
-  if(NORMALIZE_STAGE(row.stage) === st) return true;
+  const currentNormalized = NORMALIZE_STAGE(row.stage);
+  if(currentNormalized === st && row.stage === st) return true;
 
   row.stage = st;
   row.updatedAt = Date.now();
