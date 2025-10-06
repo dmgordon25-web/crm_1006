@@ -998,7 +998,7 @@
       if(contact.pbPostClose !== false && toStage === 'funded' && contact.fundedDate){
         await queuePostClose(contact);
       }
-      if(contact.pbNewLead !== false && (toStage === 'lead' || toStage === 'preapproved')){
+      if(contact.pbNewLead !== false && (toStage === 'long-shot' || toStage === 'lead' || toStage === 'preapproved')){
         if(!(detail && detail.isNew)) await queueNewLead(contact);
       }
       if(!skipDocSync){
