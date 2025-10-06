@@ -323,17 +323,6 @@
     for(const id of toDelete) await dbDelete('notifications', id);
   }
 
-  function renderBellPreview(queue){
-    const list = document.getElementById('notif-bell-list');
-    if(!list) return;
-    if(!queue.length){
-      list.innerHTML = '<li class="muted">No queued notifications. You are all caught up.</li>';
-      return;
-    }
-    const top = queue.slice(0,5).map(item => `<li><strong>${TYPE_LABELS[item.type]||item.type}</strong> · ${item.name}</li>`).join('');
-    list.innerHTML = top;
-  }
-
   function ensureFilters(){
     const wrap = document.getElementById('notif-filters');
     if(!wrap) return;
@@ -573,28 +562,19 @@
     downloadFile(`notifications_${Date.now()}.csv`, csv);
   }
 
-  async function clearAll(queue){
-    for(const item of queue){
-      await recordSent(item.contactId, item.type, item.channel);
-    }
-    toast('Cleared queued notifications for today.');
-    await renderNotifications();
-  }
-
   async function renderNotifications(){
     const queue = await buildQueue();
     __lastQueue = queue;
     await syncQueueStore(queue);
-    renderBellPreview(queue);
+    if(typeof window !== 'undefined'){
+      try{ window.__NOTIF_QUEUE__ = queue.slice(); }
+      catch(_){ window.__NOTIF_QUEUE__ = queue; }
+    }
     renderNotificationsList(queue);
-    if(typeof window.refreshNotificationBadge === 'function'){
-      window.refreshNotificationBadge();
-    }else{
-      const badge = document.getElementById('notif-badge');
-      if(badge){
-        badge.textContent = String(queue.length);
-        badge.style.display = queue.length ? '' : 'none';
-      }
+    if(typeof window !== 'undefined' && typeof window.dispatchEvent === 'function'){
+      try{
+        window.dispatchEvent(new CustomEvent('notifications:changed', { detail: { count: queue.length, queue } }));
+      }catch(_){ }
     }
   }
 
@@ -606,11 +586,6 @@
     if(exportBtn && !exportBtn.__wired){
       exportBtn.__wired = true;
       exportBtn.addEventListener('click', ()=>{ exportCurrentQueue(); });
-    }
-    const clearBtn = document.getElementById('btn-clear-notifs');
-    if(clearBtn && !clearBtn.__wired){
-      clearBtn.__wired = true;
-      clearBtn.addEventListener('click', async ()=>{ await clearAll(__lastQueue||[]); });
     }
     renderNotifications();
   }

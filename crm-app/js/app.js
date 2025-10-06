@@ -83,55 +83,7 @@
     if (typeof location !== 'undefined' && location.hash === '#notifications') goNotifications();
 
     // Badge: attach to a likely nav control labeled "Notifications" if no explicit data-nav exists
-    import('/js/notifications/notifier.js').then(({ Notifier, markAllRead }) => {
-      function findButton(){
-        return document.querySelector('[data-nav="notifications"], a[href="#notifications"], button[data-page="notifications"], button[data-nav="notifications"]')
-          || Array.from(document.querySelectorAll('button,a')).find(el => /\bnotifications\b/i.test(el.textContent||''));
-      }
-      function ensureBadge(host, count){
-        if (!host) return;
-        let b = host.querySelector('[data-badge="notif"]');
-        if (!b){
-          b = document.createElement('sup');
-          b.dataset.badge = 'notif';
-          b.style.cssText = 'margin-left:6px;padding:2px 6px;border-radius:10px;font-size:11px;line-height:1;background:#444;color:#fff;display:inline-block;';
-          host.appendChild(b);
-        }
-        b.textContent = String(count||'');
-        b.hidden = !count;
-      }
-      function repaint(){
-        const el = findButton();
-        ensureBadge(el, Notifier.unread());
-      }
-
-      // Paint now and on changes (RenderGuard will coalesce)
-      repaint();
-      Notifier.subscribe(() => repaint());
-
-      // Re-run after render cycles to keep badge in place
-      if (window.RenderGuard && typeof window.RenderGuard.registerHook === 'function'){
-        try{ window.RenderGuard.registerHook(() => repaint()); }catch(_){ }
-      }
-
-      const clearButton = document.querySelector('#btn-clear-notifs');
-      if(clearButton && !clearButton.__wired){
-        clearButton.__wired = true;
-        clearButton.addEventListener('click', () => {
-          try{ markAllRead(); }
-          catch(_){ }
-          const micro = typeof queueMicrotask === 'function'
-            ? queueMicrotask
-            : (fn) => Promise.resolve().then(fn);
-          micro(() => {
-            if(window.renderAll){
-              try{ window.renderAll('notifications:cleared'); }
-              catch(err){ console && console.warn && console.warn('[notifications] renderAll failed', err); }
-            }
-          });
-        });
-      }
-    }).catch(()=>{});
+    import('/js/notifications/notifier.js').catch(()=>{});
   })();
 
   const automationScheduler = typeof queueMicrotask === 'function'
@@ -1351,14 +1303,10 @@
         break;
       case 'notifications':
         push('renderNotifications', window.renderNotifications);
-        push('refreshNotificationBadge', window.refreshNotificationBadge);
-        push('refreshNotificationsPanel', window.refreshNotificationsPanel);
         break;
       case 'tasks':
         push('renderDashboard', window.renderDashboard);
         push('renderNotifications', window.renderNotifications);
-        push('refreshNotificationBadge', window.refreshNotificationBadge);
-        push('refreshNotificationsPanel', window.refreshNotificationsPanel);
         break;
       case 'commissions':
         push('renderCommissions', window.renderCommissions);

@@ -26,6 +26,13 @@ function notify(){
   recount();
   saveDebounced();
   SUBS.forEach(fn => { try{ fn(STATE); }catch(_){} });
+  try{
+    if(typeof window !== 'undefined' && typeof window.dispatchEvent === 'function'){
+      window.dispatchEvent(new CustomEvent('notifications:changed', {
+        detail: { count: STATE.items.length, unread: STATE.unread }
+      }));
+    }
+  }catch(_){ }
 }
 function pushRaw(item){
   STATE.items.unshift(item);
@@ -76,6 +83,15 @@ export const Notifier = {
   subscribe(fn){ SUBS.add(fn); fn(STATE); return () => SUBS.delete(fn); }
 };
 
+export function getNotificationsCount(){
+  try{
+    if(typeof window !== 'undefined' && Array.isArray(window.__NOTIF_QUEUE__)){
+      return window.__NOTIF_QUEUE__.length;
+    }
+  }catch(_){ }
+  return Number.isFinite(STATE?.items?.length) ? STATE.items.length : 0;
+}
+
 // Boot
 load();
 
@@ -99,3 +115,9 @@ try {
     Notifier.subscribe(() => { window.RenderGuard.requestRender && window.RenderGuard.requestRender(); });
   }
 } catch(_) {}
+
+try {
+  if(typeof window !== 'undefined'){
+    window.getNotificationsCount = getNotificationsCount;
+  }
+}catch(_){ }

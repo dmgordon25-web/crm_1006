@@ -1,53 +1,74 @@
 (function(){
   if(typeof window === 'undefined') return;
-  const TYPE_LABELS = {
-    taskDue: 'Task Due',
-    missingDocs: 'Missing Docs',
-    birthday: 'Birthday',
-    anniversary: 'Anniversary',
-    closingSoon: 'Closing Soon'
-  };
-  async function refreshNotificationsPanel(){
+  if(window.__WIRED_NOTIF_TAB_COUNT__) return;
+  window.__WIRED_NOTIF_TAB_COUNT__ = true;
+
+  function setNotificationsTabCount(n){
+    const sel = [
+      '[data-tab="notifications"]',
+      'a[href="#notifications"]',
+      '.tab-notifications',
+      '#tab-notifications',
+      '[data-nav="notifications"]'
+    ];
+    const tab = sel.map(s => document.querySelector(s)).find(Boolean);
+    if(!tab) return;
+    const base = 'Notifications';
+    const count = Number.isFinite(n) ? n : 0;
+    tab.textContent = count > 0 ? `${base}[${count}]` : base;
+    tab.setAttribute('data-count', String(count));
+  }
+
+  async function getNotificationsCount(){
     try{
-      const compute = typeof window.computeNotifications === 'function'
-        ? window.computeNotifications
-        : (typeof window.buildNotificationQueue === 'function' ? window.buildNotificationQueue : null);
-      const queue = compute ? await compute() : [];
-      const host = document.getElementById('notif-bell-list');
-      if(host){
-        if(!queue || !queue.length){
-          host.innerHTML = '<li class="muted">No queued notifications. You are all caught up.</li>';
-        }else{
-          host.innerHTML = queue.slice(0, 5).map(item => {
-            const type = item && item.type ? String(item.type) : '';
-            const label = TYPE_LABELS[type] || type || 'notification';
-            const when = item && item.due ? item.due : (item && item.meta && item.meta.due) || '';
-            const name = item && item.name ? item.name : '—';
-            return `<li><strong>${label}</strong> · ${name}${when ? ` <span class="muted">(${when})</span>` : ''}</li>`;
-          }).join('');
-        }
+      if(typeof window.getNotificationsCount === 'function'){
+        const value = await window.getNotificationsCount();
+        if(Number.isFinite(value)) return value;
       }
-      return queue;
-    }catch(err){
-      if(console && console.warn){ console.warn('[notifications_panel] refresh failed', err); }
-      return [];
-    }
+    }catch(_){ }
+
+    try{
+      if(Array.isArray(window.__NOTIF_QUEUE__)){
+        return window.__NOTIF_QUEUE__.length;
+      }
+    }catch(_){ }
+
+    try{
+      if(window.Notifier && typeof window.Notifier.unread === 'function'){
+        const unread = window.Notifier.unread();
+        if(Number.isFinite(unread)) return unread;
+      }
+      if(window.Notifier && Array.isArray(window.Notifier.queue)){
+        return window.Notifier.queue.length;
+      }
+    }catch(_){ }
+
+    try{
+      if(typeof window.dbCount === 'function'){
+        const c = await window.dbCount('notifications');
+        if(Number.isFinite(c)) return c;
+      }
+    }catch(_){ }
+
+    try{
+      const nodes = document.querySelectorAll('[data-notification-row], .notification-row');
+      return nodes.length || 0;
+    }catch(_){ }
+
+    return 0;
   }
 
-  window.refreshNotificationsPanel = refreshNotificationsPanel;
+  const raf = window.requestAnimationFrame || (cb => setTimeout(cb, 16));
 
-  function handleDataChanged(evt){
-    const detail = evt && evt.detail;
-    if(detail && detail.scope === 'notifications'){
-      refreshNotificationsPanel();
-    }
+  async function applyNotifCount(){
+    try{
+      const count = await getNotificationsCount();
+      setNotificationsTabCount(count);
+    }catch(_){ }
   }
 
-  document.addEventListener('app:data:changed', handleDataChanged, { passive: true });
+  try{ window.addEventListener('notifications:changed', applyNotifCount); }catch(_){ }
+  try{ window.addEventListener('app:data:changed', applyNotifCount); }catch(_){ }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', () => { refreshNotificationsPanel(); });
-  }else{
-    refreshNotificationsPanel();
-  }
+  raf(() => raf(applyNotifCount));
 })();
