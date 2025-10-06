@@ -1201,3 +1201,6 @@ import {
     setTimeout(run, 0);
   }
 })();
+
+import { wireQuickAddUnified } from '/js/ui/quick_add_unified.js';
+wireQuickAddUnified();
