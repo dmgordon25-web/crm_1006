@@ -10,7 +10,12 @@ import { debounce } from './patch_2025-10-02_baseline_ux_cleanup.js';
   function $$(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
   function $(sel, root){ return (root||document).querySelector(sel); }
 
-  ['#adv-query', '#query-builder', '.query-shell[data-query-scope="partners"]'].forEach(selector => {
+  [
+    '#adv-query',
+    '#query-builder',
+    '.query-shell[data-query-scope="partners"]',
+    '#view-partners .query-save-row'
+  ].forEach(selector => {
     const n = document.querySelector(selector);
     if(n){
       n.remove();

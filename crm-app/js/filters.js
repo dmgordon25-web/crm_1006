@@ -614,7 +614,6 @@
       ['active','#btn-saveview-active'],
       ['clients','#btn-saveview-clients'],
       ['statusLongshots','#btn-saveview-statusLongshots'],
-      ['partners','#btn-saveview-partners'],
       ['longshots','#btn-saveview-longshots']
     ].forEach(([sc,sel])=>{
       const b=$(sel); if(b&&!b.__wired){ b.__wired=true; b.addEventListener('click', ()=> saveView(sc)); }
@@ -624,7 +623,6 @@
       ['active','#btn-delview-active'],
       ['clients','#btn-delview-clients'],
       ['statusLongshots','#btn-delview-statusLongshots'],
-      ['partners','#btn-delview-partners'],
       ['longshots','#btn-delview-longshots']
     ].forEach(([sc,sel])=>{
       const b=$(sel); if(b&&!b.__wired){ b.__wired=true; b.addEventListener('click', ()=> deleteView(sc)); }
@@ -634,7 +632,6 @@
       ['active','#views-active'],
       ['clients','#views-clients'],
       ['statusLongshots','#views-statusLongshots'],
-      ['partners','#views-partners'],
       ['longshots','#views-longshots']
     ].forEach(([sc,sel])=>{
       const dd=$(sel); if(dd&&!dd.__wired){ dd.__wired=true; dd.addEventListener('change', e=>{ const name=e.target.value; if(name) applyView(sc,name); }); refreshViewsUI(sc); }
