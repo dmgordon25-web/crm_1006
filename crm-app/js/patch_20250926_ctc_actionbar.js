@@ -305,21 +305,100 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
 
   function actionbar(){ return document.getElementById('actionbar'); }
 
-  function selectionCount(){
-    if(window.Selection && typeof window.Selection.size === 'function'){
-      return window.Selection.size();
+  function wireActionbarRules(){
+    if(window.__WIRED_ACTIONBAR_RULES__) return window.__APPLY_ACTIONBAR_RULES__;
+    window.__WIRED_ACTIONBAR_RULES__ = true;
+
+    function getSelectedCount(){
+      try{
+        if(window.Selection && typeof window.Selection.getSelectedIds === 'function'){
+          const ids = window.Selection.getSelectedIds();
+          if(Array.isArray(ids)) return ids.length;
+          if(ids && typeof ids.size === 'number') return ids.size;
+        }
+        if(window.Selection && typeof window.Selection.size === 'function'){
+          const size = window.Selection.size();
+          if(typeof size === 'number' && !Number.isNaN(size)) return size;
+        }
+        if(window.SelectionService && typeof window.SelectionService.getIds === 'function'){
+          const ids = window.SelectionService.getIds();
+          if(Array.isArray(ids)) return ids.length;
+          if(ids && typeof ids.size === 'number') return ids.size;
+          if(ids && typeof ids.length === 'number') return ids.length;
+        }
+        if(window.SelectionService && typeof window.SelectionService.count === 'function'){
+          const count = window.SelectionService.count();
+          if(typeof count === 'number' && !Number.isNaN(count)) return count;
+        }
+      }catch(_err){}
+      try{
+        const domSelected = document.querySelectorAll('[data-selectable].selected, [data-row].is-selected, tr.selected, .row.selected, [data-selected="true"]');
+        return domSelected.length;
+      }catch(_err){}
+      return 0;
     }
-    if(window.SelectionService && typeof window.SelectionService.count === 'function'){
-      return window.SelectionService.count();
+
+    function findButtons(){
+      const editBtn = document.querySelector('#actionbar [data-act="edit"], [data-act="edit"], [data-action="edit"], .action-edit, #btnEdit, #btn-edit');
+      const mergeBtn = document.querySelector('#actionbar [data-act="merge"], [data-act="merge"], [data-action="merge"], .action-merge, #btnMerge, #btn-merge');
+      return { editBtn, mergeBtn };
     }
-    return 0;
+
+    function setButtonDisabled(el, disabled){
+      if(!el) return;
+      const off = !!disabled;
+      try{ setDisabled(el, off); }
+      catch(_err){
+        if(typeof el.disabled !== 'undefined') el.disabled = off;
+        if(off){ el.setAttribute('disabled', ''); }
+        else{ el.removeAttribute('disabled'); }
+        el.setAttribute('aria-disabled', off ? 'true' : 'false');
+      }
+      try{
+        if(el.classList){
+          el.classList.toggle('disabled', off);
+          el.classList.toggle('is-disabled', off);
+        }
+      }catch(_err){}
+    }
+
+    function applyRules(){
+      const { editBtn, mergeBtn } = findButtons();
+      const count = getSelectedCount();
+      const editOn = count === 1;
+      const mergeOn = count === 2;
+      setButtonDisabled(editBtn, !editOn);
+      setButtonDisabled(mergeBtn, !mergeOn);
+    }
+
+    function addListener(target, eventName){
+      try{
+        if(target && typeof target.addEventListener === 'function'){
+          target.addEventListener(eventName, applyRules);
+        }
+      }catch(_err){}
+    }
+
+    const raf = window.requestAnimationFrame || (cb => setTimeout(cb, 16));
+    const listenTargets = [window, document];
+    const selectionEvents = ['selection:changed', 'selectionChanged'];
+    const dataEvents = ['app:data:changed', 'appDataChanged'];
+    listenTargets.forEach(target => {
+      selectionEvents.forEach(evt => addListener(target, evt));
+      dataEvents.forEach(evt => addListener(target, evt));
+    });
+    raf(() => raf(applyRules));
+
+    window.__APPLY_ACTIONBAR_RULES__ = applyRules;
+    return applyRules;
   }
 
   function updatePrimaryButtons(){
-    const n = selectionCount();
-    setDisabled('#btn-edit', !(n === 1));
-    setDisabled('#btn-merge', !(n === 2));
+    const applyRules = wireActionbarRules();
+    if(typeof applyRules === 'function') applyRules();
   }
+
+  wireActionbarRules();
 
   function ensureConvertButton(){
     const bar = actionbar();
