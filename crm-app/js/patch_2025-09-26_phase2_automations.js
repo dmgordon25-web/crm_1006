@@ -236,10 +236,11 @@
   };
 
   const stageLabels = {
-    lead: 'Lead',
-    'pre-app': 'Pre-App',
-    preapproved: 'Pre-App',
-    'preapproved-lead': 'Pre-App',
+    lead: 'Long Shot',
+    'long-shot': 'Long Shot',
+    'pre-app': 'Pre-Approved',
+    preapproved: 'Pre-Approved',
+    'preapproved-lead': 'Pre-Approved',
     application: 'Application',
     processing: 'Processing',
     underwriting: 'Underwriting',
@@ -248,7 +249,9 @@
     ctc: 'Cleared to Close',
     funded: 'Funded',
     'post-close': 'Post-Close',
-    nurture: 'Nurture'
+    nurture: 'Nurture',
+    lost: 'Lost',
+    denied: 'Denied'
   };
 
   const escapeHtml = (value)=> String(value==null?'':value).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
