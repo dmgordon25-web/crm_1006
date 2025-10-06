@@ -141,16 +141,53 @@ export function wireQuickAddUnified() {
   function bindTriggers() {
     const selectors = [
       '[data-action="quick-add-contact"]',
-      ".quick-add-contact",
-      "#btnQuickAddContact",
       '[data-action="quick-add-partner"]',
+      "[data-quick-add]",
+      "[data-quick-add-contact]",
+      "[data-quick-add-partner]",
+      ".quick-add-contact",
       ".quick-add-partner",
-      "#btnQuickAddPartner"
+      "#btnQuickAddContact",
+      "#btnQuickAddPartner",
+      "#quick-add"
     ];
-    const nodes = selectors.flatMap(sel => Array.from(document.querySelectorAll(sel)));
+    const seen = new Set();
+    const nodes = [];
+    selectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(node => {
+        if (!seen.has(node)) {
+          seen.add(node);
+          nodes.push(node);
+        }
+      });
+    });
     nodes.forEach(node => {
-      const text = (node.getAttribute("data-action") || node.className || node.id || "").toLowerCase();
-      const isPartner = text.includes("partner");
+      const dataset = node.dataset || {};
+      const hints = [
+        dataset.quickAdd,
+        dataset.quickAddTarget,
+        dataset.quickAddKind,
+        dataset.quickAddType,
+        dataset.action,
+        node.getAttribute("data-quick-add"),
+        node.getAttribute("data-quick-add-target"),
+        node.getAttribute("data-quick-add-kind"),
+        node.getAttribute("data-quick-add-type"),
+        node.getAttribute("aria-label"),
+        node.getAttribute("title"),
+        node.getAttribute("data-target"),
+        node.className,
+        node.id,
+        node.textContent
+      ];
+      if (Object.prototype.hasOwnProperty.call(dataset, "quickAddPartner") || node.hasAttribute("data-quick-add-partner")) {
+        hints.push("partner");
+      }
+      if (Object.prototype.hasOwnProperty.call(dataset, "quickAddContact") || node.hasAttribute("data-quick-add-contact")) {
+        hints.push("contact");
+      }
+      const hintText = hints.filter(Boolean).join(" ").toLowerCase();
+      const isPartner = hintText.includes("partner");
       node.addEventListener("click", (e) => { e.preventDefault(); open(isPartner ? "partner" : "contact"); });
     });
   }
