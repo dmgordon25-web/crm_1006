@@ -19,6 +19,8 @@ function normStage(s){
   if(KEY_TO_LABEL.has(lowered)) return KEY_TO_LABEL.get(lowered);
   const slug = lowered.replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-+|-+$/g,'');
   if(KEY_TO_LABEL.has(slug)) return KEY_TO_LABEL.get(slug);
+  const normalized = NORMALIZE_STAGE(raw);
+  if(STAGE_LABEL_SET.has(normalized)) return normalized;
   return null;
 }
 
