@@ -361,9 +361,15 @@ import { STR, text } from './ui/strings.js';
     fha:'#2E86DE', va:'#10AC84', conv:'#C56CF0', jumbo:'#F368E0', other:'#8395A7'
   });
   const STATUS_COLORS = Object.freeze({
-    'new':'#7f8c8d', 'application':'#2980b9', 'pre-approved':'#16a085',
-    'processing':'#8e44ad', 'underwriting':'#d35400', 'approved':'#27ae60',
-    'ctc':'#c0392b', 'funded':'#2c3e50'
+    'long-shot':'#7f8c8d', 'new':'#7f8c8d',
+    'application':'#2980b9',
+    'preapproved':'#16a085',
+    'processing':'#8e44ad',
+    'underwriting':'#d35400',
+    'approved':'#27ae60',
+    'cleared-to-close':'#c0392b',
+    'ctc':'#c0392b',
+    'funded':'#2c3e50'
   });
   function colorForLoan(key){ return LOAN_COLORS[key] || LOAN_COLORS.other; }
   function colorForStatus(s){ return STATUS_COLORS[(s||'').toLowerCase()] || '#95a5a6'; }

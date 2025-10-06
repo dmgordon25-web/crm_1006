@@ -1,4 +1,6 @@
 // patch_2025-09-26_phase3_dashboard_reports.js — Phase 3 dashboard + reports
+import { PIPELINE_STAGE_KEYS, stageKeyFromLabel as canonicalStageKey, stageLabelFromKey as canonicalStageLabel } from '/js/pipeline/stages.js';
+
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_2025_09_26_phase3_dashboard_reports) return;
@@ -9,21 +11,18 @@
 
   const DAY_MS = 86400000;
   const PARTNER_NONE_ID = window.PARTNER_NONE_ID || window.NONE_PARTNER_ID || '00000000-0000-none-partner-000000000000';
-  const LANE_ORDER = ['lead','pre-app','application','processing','underwriting','ctc','funded','post-close','nurture','lost','denied'];
-  const PIPELINE_LANES = ['lead','pre-app','application','processing','underwriting','ctc'];
-  const STAGE_LABELS = {
-    'lead':'Lead',
-    'pre-app':'Pre-App',
-    'application':'Application',
-    'processing':'Processing',
-    'underwriting':'Underwriting',
-    'ctc':'Cleared to Close',
-    'funded':'Funded',
-    'post-close':'Post-Close',
-    'nurture':'Nurture',
-    'lost':'Lost',
-    'denied':'Denied'
-  };
+  const BASE_PIPELINE_KEYS = PIPELINE_STAGE_KEYS.slice();
+  const LANE_ORDER = BASE_PIPELINE_KEYS.concat(['post-close','nurture','lost','denied']);
+  const PIPELINE_LANES = BASE_PIPELINE_KEYS.filter(key => key !== 'funded');
+  const STAGE_LABELS = Object.assign(
+    Object.fromEntries(BASE_PIPELINE_KEYS.map(key => [key, canonicalStageLabel(key)])),
+    {
+      'post-close': 'Post-Close',
+      'nurture': 'Nurture',
+      'lost': 'Lost',
+      'denied': 'Denied'
+    }
+  );
   const LOSS_REASON_LABELS = {
     'no-docs':'Missing Documents',
     'rate':'Rate / Terms',
@@ -100,18 +99,18 @@
   if(storedInitialMode) state.dashboard.mode = storedInitialMode;
 
   function canonicalStage(value){
-    const fn = typeof window.canonicalizeStage === 'function'
-      ? window.canonicalizeStage
-      : (val)=> String(val==null?'':val).trim().toLowerCase();
-    return fn(value);
+    if(typeof window.canonicalizeStage === 'function'){
+      return window.canonicalizeStage(value);
+    }
+    return canonicalStageKey(value);
   }
 
   function laneKeyFromStage(stage){
     const canonical = canonicalStage(stage);
-    if(canonical === 'preapproved' || canonical === 'pre-app' || canonical === 'preapp') return 'pre-app';
-    if(canonical === 'cleared-to-close' || canonical === 'ctc' || canonical === 'clear-to-close') return 'ctc';
-    if(canonical === 'approved') return 'ctc';
     if(LANE_ORDER.includes(canonical)) return canonical;
+    if(canonical === 'ctc' || canonical === 'clear-to-close') return 'cleared-to-close';
+    if(canonical === 'pre-app' || canonical === 'preapp') return 'preapproved';
+    if(canonical === 'lead') return 'long-shot';
     return canonical;
   }
 
@@ -296,7 +295,7 @@
     if(!raw || raw.id==null) return null;
     const id = String(raw.id);
     const stage = laneKeyFromStage(raw.stage || 'application');
-    const canonicalStageKey = stage === 'pre-app' ? 'preapproved' : (stage === 'ctc' ? 'cleared-to-close' : canonicalStage(raw.stage||stage));
+    const canonicalStageKey = canonicalStage(raw.stage || stage);
     const createdTs = toTimestamp(raw.createdAt) || toTimestamp(raw.created) || toTimestamp(raw.addedAt);
     const fundedDate = parseDate(raw.fundedDate || raw.closedDate || raw.closingDate);
     const fundedTs = fundedDate ? fundedDate.getTime() : null;
@@ -502,7 +501,7 @@
     const cycleDurations = [];
     ytdFunded.forEach(contact => {
       const fundedTs = contact.fundedTs;
-      const startTs = getStageTimestamp(contact, ['lead','pre-app','preapproved','application']);
+      const startTs = getStageTimestamp(contact, ['long-shot','application','preapproved']);
       if(fundedTs && startTs){
         cycleDurations.push(Math.max(0, (fundedTs - startTs) / DAY_MS));
       }
@@ -536,7 +535,7 @@
       if(!contact || contact.deleted) return false;
       if(!contact.createdTs) return false;
       if(PIPELINE_LANES.includes(contact.lane)) return true;
-      return contact.lane === 'lead';
+      return contact.lane === 'long-shot';
     }).sort((a,b)=> (b.createdTs||0) - (a.createdTs||0)).slice(0,5);
 
     const referralsYtd = ytdFunded.filter(contact => contact.partners.length > 0).length;
@@ -991,8 +990,8 @@
     state.contacts.forEach(contact => {
       if(!contact || contact.deleted) return;
       const fundedTs = contact.fundedTs || null;
-      const ctcTs = contact.stageMap?.[canonicalStage('cleared-to-close')] || contact.stageMap?.[canonicalStage('ctc')] || null;
-      const startTs = getStageTimestamp(contact, ['application','pre-app','lead']);
+      const ctcTs = contact.stageMap?.[canonicalStage('cleared-to-close')] || null;
+      const startTs = getStageTimestamp(contact, ['application','preapproved','long-shot']);
       contact.partners.forEach(pid => {
         if(!pid || pid === PARTNER_NONE_ID) return;
         let stat = partnerStats.get(pid);

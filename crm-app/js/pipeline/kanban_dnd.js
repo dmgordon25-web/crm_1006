@@ -1,26 +1,25 @@
-import { NORMALIZE_STAGE } from '/js/pipeline/stages.js';
+import { PIPELINE_STAGES, NORMALIZE_STAGE, stageKeyFromLabel } from '/js/pipeline/stages.js';
 
 let WIRED = false;
 let WIRED_BOARD = null;
 
-const STAGES = [
-  'New','Application','Pre-Approved','Processing',
-  'Underwriting','Approved','CTC','Funded'
-];
+const STAGE_LABEL_SET = new Set(PIPELINE_STAGES);
+const KEY_TO_LABEL = new Map();
+PIPELINE_STAGES.forEach((label) => {
+  KEY_TO_LABEL.set(stageKeyFromLabel(label), label);
+});
 
 function normStage(s){
   if(!s) return null;
-  s = String(s).trim();
-  // loose matches & aliases
-  const map = {
-    'pre approved':'Pre-Approved', 'preapproved':'Pre-Approved', 'pre-approval':'Pre-Approved',
-    'clear to close':'CTC', 'clear-to-close':'CTC', 'ctc':'CTC'
-  };
-  const k = s.toLowerCase();
-  if(map[k]) return map[k];
-  // direct match ignoring case
-  const hit = STAGES.find(x => x.toLowerCase() === k);
-  return hit || null;
+  const raw = String(s).trim();
+  if(!raw) return null;
+  const lowered = raw.toLowerCase();
+  if(KEY_TO_LABEL.has(lowered)) return KEY_TO_LABEL.get(lowered);
+  const slug = lowered.replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-+|-+$/g,'');
+  if(KEY_TO_LABEL.has(slug)) return KEY_TO_LABEL.get(slug);
+  const normalized = NORMALIZE_STAGE(raw);
+  if(STAGE_LABEL_SET.has(normalized)) return normalized;
+  return null;
 }
 
 function boardEl(){ return document.querySelector('[data-kanban], #kanban, .kanban-board'); }
@@ -34,7 +33,7 @@ function lanes(){
     if(!el.dataset.stage){
       const h = el.getAttribute('aria-label') || el.querySelector('h3,h4,header')?.textContent || '';
       const st = normStage(h);
-      if(st) el.dataset.stage = st;
+      if(st) el.dataset.stage = stageKeyFromLabel(st);
     }
   });
   return items.filter(el => normStage(el.dataset.stage));
@@ -81,7 +80,8 @@ function scheduleFlush(){
 
 async function persistStage(contactId, newStage){
   if(!contactId || !newStage) return false;
-  const st = NORMALIZE_STAGE(newStage);
+  const normalizedLabel = NORMALIZE_STAGE(newStage);
+  const stageKey = stageKeyFromLabel(normalizedLabel);
 
   const scope = (typeof window !== 'undefined' && window) ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
   let dbm = null;
@@ -133,10 +133,10 @@ async function persistStage(contactId, newStage){
     row = null;
   }
   if(!row) return false;
-  const currentNormalized = NORMALIZE_STAGE(row.stage);
-  if(currentNormalized === st && row.stage === st) return true;
+  const currentKey = stageKeyFromLabel(row.stage);
+  if(currentKey === stageKey && row.stage === stageKey) return true;
 
-  row.stage = st;
+  row.stage = stageKey;
   row.updatedAt = Date.now();
   try {
     await put(row);
@@ -173,6 +173,7 @@ function installDnD(){
     const lane = e.target.closest('[data-stage],[data-lane],[data-column]');
     if(!lane) return;
     const st = normStage(lane.dataset.stage); if(!st) return;
+    const laneKey = stageKeyFromLabel(st);
     try{
       const raw = e.dataTransfer?.getData('text/plain'); if(!raw) return;
       const payload = JSON.parse(raw || '{}');
@@ -181,7 +182,11 @@ function installDnD(){
       if(ok){
         // Move the card DOM immediately for responsiveness (data repaint will reconcile)
         const card = root.querySelector(`[data-id="${payload.id}"]`);
-        if(card && lane) lane.querySelector('[data-list], .lane-list, .kanban-list, .cards')?.appendChild(card);
+        if(card && lane){
+          const list = lane.querySelector('[data-list], .lane-list, .kanban-list, .cards');
+          if(list) list.appendChild(card);
+          try{ card.dataset.stage = laneKey; }catch(_){ }
+        }
       }
     }catch(_){ }
   });

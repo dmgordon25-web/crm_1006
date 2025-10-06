@@ -1,5 +1,6 @@
 import { STR, text } from './ui/strings.js';
 import { safeMax, normalizePhone, normalizeEmail } from './util/strings.js';
+import { stageKeyFromLabel } from './pipeline/stages.js';
 
 const CLAMP_LIMITS = Object.freeze({ name: 120, company: 120, address: 200, notes: 10000 });
 
@@ -157,6 +158,10 @@ function clampPartner(record, stats) {
   return next;
 }
 
+function normalizeStageValue(value) {
+  return stageKeyFromLabel(value);
+}
+
 function mergeContactRecord(existing, incoming) {
   const base = cloneRecord(existing) || {};
   const payload = cloneRecord(incoming) || {};
@@ -169,6 +174,9 @@ function mergeContactRecord(existing, incoming) {
       result[field] = payload[field];
     }
   });
+  if (hasNonEmpty(result.stage)) {
+    result.stage = normalizeStageValue(result.stage);
+  }
   if (hasNonEmpty(payload.notes)) {
     result.notes = combineNotes(base.notes, payload.notes);
   }
@@ -444,7 +452,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         preferredName: canon(r[col('preferredName')]||''),
         email: canon(r[col('email')]||''), phone: canon(r[col('phone')]||''),
         address: canon(r[col('address')]||''), city: canon(r[col('city')]||''), state: canon(r[col('state')]||''), zip: canon(r[col('zip')]||''),
-        referredBy: canon(r[col('referredBy')]||''), loanType: canon(r[col('loanType')]||''), stage: canon(r[col('stage')]||''),
+        referredBy: canon(r[col('referredBy')]||''), loanType: canon(r[col('loanType')]||''), stage: normalizeStageValue(r[col('stage')]||''),
         loanAmount: Number(canon(r[col('loanAmount')]||'0').replace(/[^0-9.-]/g,''))||0, rate: Number(canon(r[col('rate')]||'0'))||0,
         fundedDate: canon(r[col('fundedDate')]||''), status: canon(r[col('status')]||''),
         notes: canon(r[col('notes')]||''),

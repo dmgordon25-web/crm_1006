@@ -22,9 +22,10 @@
   function pipelineLaneKey(stageKey){
     const canonical = canonicalStage(stageKey);
     if(!canonical) return '';
-    if(canonical === 'preapproved' || canonical === 'pre-app' || canonical === 'preapp') return 'pre-app';
-    if(canonical === 'approved' || canonical === 'cleared-to-close' || canonical === 'ctc') return 'ctc';
-    if(canonical === 'long-shot') return 'lead';
+    if(canonical === 'preapproved' || canonical === 'pre-app' || canonical === 'preapp') return 'preapproved';
+    if(canonical === 'approved') return 'approved';
+    if(canonical === 'cleared-to-close' || canonical === 'ctc') return 'cleared-to-close';
+    if(canonical === 'long-shot' || canonical === 'lead') return 'long-shot';
     return normalizeLaneKey(canonical);
   }
 
