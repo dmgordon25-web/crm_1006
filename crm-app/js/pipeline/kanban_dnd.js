@@ -84,7 +84,7 @@ async function persistStage(contactId, newStage){
   const scope = (typeof window !== 'undefined' && window) ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
   let dbm = null;
   try {
-    dbm = await import('../db.js');
+    dbm = await import('/js/db.js');
   } catch(_err) {
     dbm = null;
   }

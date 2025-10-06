@@ -3,8 +3,8 @@
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_20250923_trim2) return; window.__INIT_FLAGS__.patch_20250923_trim2 = true;
-  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('js/patch_20250923_baseline.js')){
-    window.__PATCHES_LOADED__.push('js/patch_20250923_baseline.js');
+  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('/js/patch_20250923_baseline.js')){
+    window.__PATCHES_LOADED__.push('/js/patch_20250923_baseline.js');
   }
 
   const DIRECT_ATTRS = ['data-id','data-contact-id','data-partner-id','data-row-id'];

@@ -26,7 +26,7 @@ export async function sampleData() {
       ? window.Selection.current()
       : { ids: [] };
     const id = selection && selection.ids && selection.ids[0];
-    const dbModule = await import('../db.js').catch(() => null);
+    const dbModule = await import('/js/db.js').catch(() => null);
     if (dbModule && dbModule.openDB) {
       await dbModule.openDB();
       if (id && (dbModule.dbGetContact || dbModule.getContact)) {

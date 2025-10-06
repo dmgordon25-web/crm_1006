@@ -4,7 +4,7 @@ export const __esModule = true;
   if (!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if (window.__INIT_FLAGS__[MODULE_KEY]) return;
   window.__INIT_FLAGS__[MODULE_KEY] = true;
-  const PATCH_PATH = 'js/patch_2025-10-02_medium_nice.js';
+  const PATCH_PATH = '/js/patch_2025-10-02_medium_nice.js';
   if (Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes(PATCH_PATH)) {
     window.__PATCHES_LOADED__.push(PATCH_PATH);
   }
@@ -462,7 +462,7 @@ export const __esModule = true;
 
   function ensureMergeModule() {
     if (window.__CONTACT_MERGE_TEST__) return Promise.resolve(window.__CONTACT_MERGE_TEST__);
-    return import('./patch_2025-09-27_merge_ui.js')
+    return import('/js/patch_2025-09-27_merge_ui.js')
       .catch(() => null)
       .then(() => window.__CONTACT_MERGE_TEST__ || null);
   }

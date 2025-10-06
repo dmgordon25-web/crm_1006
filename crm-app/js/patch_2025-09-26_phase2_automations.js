@@ -3,8 +3,8 @@
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_2025_09_26_phase2_automations) return;
   window.__INIT_FLAGS__.patch_2025_09_26_phase2_automations = true;
-  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('js/patch_2025-09-26_phase2_automations.js')){
-    window.__PATCHES_LOADED__.push('js/patch_2025-09-26_phase2_automations.js');
+  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('/js/patch_2025-09-26_phase2_automations.js')){
+    window.__PATCHES_LOADED__.push('/js/patch_2025-09-26_phase2_automations.js');
   }
 
   const DAY_MS = 86400000;

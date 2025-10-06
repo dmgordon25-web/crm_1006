@@ -427,7 +427,7 @@ import { STR, text } from './ui/strings.js';
       if(!source || !source.entity || !source.id || !newDate) return false;
       const scope = (typeof window !== 'undefined') ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
       if(typeof scope.openDB !== 'function' || typeof scope.dbGet !== 'function' || typeof scope.dbPut !== 'function'){
-        await import('./db.js').catch(()=>null);
+        await import('/js/db.js').catch(()=>null);
       }
       const openDB = typeof scope.openDB === 'function' ? scope.openDB : null;
       const dbGet = typeof scope.dbGet === 'function' ? scope.dbGet : null;
