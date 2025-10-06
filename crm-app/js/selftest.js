@@ -13,30 +13,7 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
     requiredPhases.push('js/_legacy/patch_2025-09-27_workbench.js');
   }
 
-  const diagnosticsHost = document.getElementById('diagnostics');
-
   function addDiagnostic(kind, message){
-    if(DEBUG && diagnosticsHost){
-      diagnosticsHost.hidden = false;
-      const row = document.createElement('div');
-      row.setAttribute('data-kind', kind);
-      row.textContent = `${kind.toUpperCase()} — ${message}`;
-      row.style.padding = '6px 10px';
-      row.style.marginBottom = '4px';
-      row.style.borderRadius = '6px';
-      row.style.fontSize = '13px';
-      if(kind === 'pass'){
-        row.style.background = 'rgba(12, 132, 60, 0.12)';
-        row.style.color = '#0a5c2b';
-      }else if(kind === 'skip'){
-        row.style.background = 'rgba(148, 163, 184, 0.18)';
-        row.style.color = '#475569';
-      }else{
-        row.style.background = 'rgba(197, 44, 44, 0.15)';
-        row.style.color = '#761515';
-      }
-      diagnosticsHost.appendChild(row);
-    }
     if(console){
       const log = kind === 'fail'
         ? console.error
@@ -54,8 +31,6 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
   const splashRoot = document.getElementById('diagnostic-splash');
   const splashTitle = splashRoot ? splashRoot.querySelector('[data-role="diag-title"]') : null;
   const splashMessage = splashRoot ? splashRoot.querySelector('[data-role="diag-message"]') : null;
-  const splashPatchCount = splashRoot ? splashRoot.querySelector('[data-role="diag-patch-count"]') : null;
-  const splashPatchList = splashRoot ? splashRoot.querySelector('[data-role="diag-patch-list"]') : null;
   const splashDetails = splashRoot ? splashRoot.querySelector('[data-role="diag-details"]') : null;
   const splashButton = splashRoot ? splashRoot.querySelector('[data-role="diag-run-selftest"]') : null;
 
@@ -75,25 +50,6 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
     return true;
   }
 
-  function updateSplashPatches(patches){
-    if(!DEBUG || !splashPatchList) return;
-    const list = Array.isArray(patches) ? patches : [];
-    splashPatchList.innerHTML = '';
-    if(list.length){
-      list.forEach(path => {
-        const li = document.createElement('li');
-        li.textContent = path;
-        splashPatchList.appendChild(li);
-      });
-    }else{
-      const li = document.createElement('li');
-      li.classList.add('muted');
-      li.textContent = 'No patches registered.';
-      splashPatchList.appendChild(li);
-    }
-    if(splashPatchCount) splashPatchCount.textContent = String(list.length);
-  }
-
   function renderDiagnosticSplash(config){
     if(!DEBUG) return;
     if(!ensureSplashVisible()) return;
@@ -109,7 +65,6 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
         splashMessage.hidden = true;
       }
     }
-    updateSplashPatches(config.patches);
     if(splashDetails){
       splashDetails.innerHTML = '';
       if(Array.isArray(config.details) && config.details.length){
@@ -135,7 +90,6 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
       : [];
     const details = [];
     details.push(window.BOOT_OK === true ? 'BOOT_OK marker present.' : 'BOOT_OK marker missing.');
-    details.push(patches.length ? `Patches reported: ${patches.length}` : 'No patches were reported as loaded.');
     renderDiagnosticSplash({
       title: 'Diagnostics: Boot markers missing',
       message: 'Boot markers were not detected during startup. Use the self-test to investigate.',

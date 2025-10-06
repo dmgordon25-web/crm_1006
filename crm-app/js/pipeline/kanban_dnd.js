@@ -13,6 +13,8 @@ function normStage(s){
   if(!s) return null;
   const raw = String(s).trim();
   if(!raw) return null;
+  const normalized = NORMALIZE_STAGE(raw);
+  if(STAGE_LABEL_SET.has(normalized)) return normalized;
   const lowered = raw.toLowerCase();
   if(KEY_TO_LABEL.has(lowered)) return KEY_TO_LABEL.get(lowered);
   const slug = lowered.replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-+|-+$/g,'');

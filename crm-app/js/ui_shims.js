@@ -218,8 +218,6 @@
     function wireHeader(){
       const addBtn = Array.from(document.querySelectorAll('button, a')).find(el => /add contact/i.test(el.textContent||''));
       if(addBtn && !addBtn.__wired){ addBtn.__wired = true; addBtn.addEventListener('click', (e)=>{ e.preventDefault(); openAddContact(); }); }
-      const bell = document.querySelector('[aria-label="notifications"], #btn-notify, #btn-bell, #btn-alert');
-      if(bell && !bell.__wired){ bell.__wired = true; bell.addEventListener('click', (e)=>{ e.preventDefault(); if(typeof gotoView==='function') gotoView('notifications'); document.dispatchEvent(new Event('app:data:changed')); }); }
     }
     document.addEventListener('DOMContentLoaded', wireHeader);
 
