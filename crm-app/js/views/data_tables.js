@@ -1,12 +1,12 @@
 export async function fetchContacts(opts = {}) {
-  const { openDB, dbAllContacts } = await import('../db.js');
+  const { openDB, dbAllContacts } = await import('/js/db.js');
   await openDB();
   const rows = await dbAllContacts();
   return Array.isArray(rows) ? rows : [];
 }
 
 export async function fetchPartners(opts = {}) {
-  const { openDB, dbAllPartners } = await import('../db.js');
+  const { openDB, dbAllPartners } = await import('/js/db.js');
   await openDB();
   const rows = await dbAllPartners();
   return Array.isArray(rows) ? rows : [];

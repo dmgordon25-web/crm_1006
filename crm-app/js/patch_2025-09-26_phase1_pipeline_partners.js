@@ -5,8 +5,8 @@ import { hide } from './patch_2025-10-02_baseline_ux_cleanup.js';
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_2025_09_26_phase1_pipeline_partners) return;
   window.__INIT_FLAGS__.patch_2025_09_26_phase1_pipeline_partners = true;
-  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('js/patch_2025-09-26_phase1_pipeline_partners.js')){
-    window.__PATCHES_LOADED__.push('js/patch_2025-09-26_phase1_pipeline_partners.js');
+  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('/js/patch_2025-09-26_phase1_pipeline_partners.js')){
+    window.__PATCHES_LOADED__.push('/js/patch_2025-09-26_phase1_pipeline_partners.js');
   }
 
   const STATUSES = ['New','Application','Pre-Approved','Processing','Underwriting','Approved','CTC','Funded'];

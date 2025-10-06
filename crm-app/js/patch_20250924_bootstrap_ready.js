@@ -2,8 +2,8 @@
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.bootstrap_ready_fix) return; window.__INIT_FLAGS__.bootstrap_ready_fix = true;
-  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('js/patch_20250924_bootstrap_ready.js')){
-    window.__PATCHES_LOADED__.push('js/patch_20250924_bootstrap_ready.js');
+  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('/js/patch_20250924_bootstrap_ready.js')){
+    window.__PATCHES_LOADED__.push('/js/patch_20250924_bootstrap_ready.js');
   }
 
   async function emit(detail){

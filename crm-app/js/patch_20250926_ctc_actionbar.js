@@ -5,8 +5,8 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
   if(window.__INIT_FLAGS__.patch_20250926_ctc_actionbar) return;
   window.__INIT_FLAGS__.patch_20250926_ctc_actionbar = true;
-  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('js/patch_20250926_ctc_actionbar.js')){
-    window.__PATCHES_LOADED__.push('js/patch_20250926_ctc_actionbar.js');
+  if(Array.isArray(window.__PATCHES_LOADED__) && !window.__PATCHES_LOADED__.includes('/js/patch_20250926_ctc_actionbar.js')){
+    window.__PATCHES_LOADED__.push('/js/patch_20250926_ctc_actionbar.js');
   }
 
   const STAGE_SYNONYMS = {
