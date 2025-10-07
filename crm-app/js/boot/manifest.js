@@ -68,6 +68,7 @@ export const PATCHES = [
   "/js/patch_2025-09-27_phase6_polish_telemetry.js",
   "/js/patch_2025-10-03_quick_add_partner.js",
   "/js/patch_2025-10-03_automation_seed.js",
+  "/js/patch_2025-10-07_wire_diag_and_stage_tracker.js",
 ];
 
 export default {
