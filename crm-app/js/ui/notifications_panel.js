@@ -4,7 +4,7 @@ if (!window.__WIRED_NOTIF_TAB_COUNT__) {
   window.__WIRED_NOTIF_TAB_COUNT__ = true;
 
   function setTab(n) {
-    const sel = ['[data-tab="notifications"]','a[href="#notifications"]','.tab-notifications','#tab-notifications'];
+    const sel = ['[data-nav="notifications"]','[data-tab="notifications"]','a[href="#notifications"]','.tab-notifications','#tab-notifications'];
     const tab = sel.map(s => document.querySelector(s)).find(Boolean);
     if (!tab) return;
     const base = "Notifications";
