@@ -1,5 +1,6 @@
 const PROFILE_KEY = "profile:v1";
 const PHOTO_KEY = "profile.photoDataUrl";
+const PHOTO_CLEARED_KEY = "profile.photoCleared";
 
 function normalizeDataUrl(dataUrl) {
   return typeof dataUrl === "string" ? dataUrl : "";
@@ -98,6 +99,24 @@ function writeFallbackPhoto(dataUrl) {
   } catch (_) {}
 }
 
+function writeClearedFlag(dataUrl) {
+  try {
+    if (dataUrl) {
+      localStorage.removeItem(PHOTO_CLEARED_KEY);
+    } else {
+      localStorage.setItem(PHOTO_CLEARED_KEY, "1");
+    }
+  } catch (_) {}
+}
+
+function readClearedFlag() {
+  try {
+    return localStorage.getItem(PHOTO_CLEARED_KEY) === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
 function dispatchStoredEvent(dataUrl, broadcastOptions) {
   if (typeof document === "undefined") return;
   try {
@@ -171,6 +190,7 @@ function saveDataUrl(dataUrl, options = {}) {
   updateLocalProfile(normalized);
   updateGlobalProfile(normalized);
   writeFallbackPhoto(normalized);
+  writeClearedFlag(normalized);
 
   if (changed && options.broadcast !== false) {
     dispatchStoredEvent(normalized, { notifyApp: options.notifyApp !== false });
@@ -181,6 +201,7 @@ function saveDataUrl(dataUrl, options = {}) {
 export const SettingsPhoto = {
   saveDataUrl,
   loadDataUrl,
+  wasExplicitlyCleared: readClearedFlag,
 };
 
 export default SettingsPhoto;

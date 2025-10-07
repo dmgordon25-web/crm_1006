@@ -126,7 +126,9 @@ import { SettingsPhoto } from "/js/settings_profile_photo.js";
       });
 
       refs.remove.addEventListener("click", () => {
-        SettingsPhoto.saveDataUrl("", { notifyApp: true });
+        // Suppress the global app:data:changed broadcast so settings_forms.js
+        // doesn't immediately rehydrate and restore the server version.
+        SettingsPhoto.saveDataUrl("", { notifyApp: false });
         updatePreview(refs, "");
       });
     }
