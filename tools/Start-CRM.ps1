@@ -329,6 +329,21 @@ try {
     exit 1
   } else {
     Write-Log "[EXIT] success."
+    try {
+      # If we reached here, server is up and browser launched; exit this host so the console closes.
+      # Respect the explicit CRM_DEBUG escape hatch and avoid exiting when a debugging preference is active.
+      $shouldAutoExit = -not $env:CRM_DEBUG
+
+      if ($DebugPreference -and $DebugPreference -notin @('SilentlyContinue', 'Continue')) {
+        $shouldAutoExit = $false
+      }
+
+      if ($shouldAutoExit) {
+        Start-Sleep -Seconds 1
+        $host.SetShouldExit(0)
+        exit
+      }
+    } catch { }
 
     if (-not $debugging) {
       Start-Sleep -Milliseconds 500
