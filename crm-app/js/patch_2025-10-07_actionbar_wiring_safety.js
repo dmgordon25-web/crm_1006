@@ -26,6 +26,7 @@
       if (svc) {
         let ids;
         let type = scope;
+        let typeFromPayload = false;
 
         const assignFromPayload = (payload) => {
           if (!payload) return false;
@@ -35,13 +36,19 @@
           }
           if (Array.isArray(payload.ids)) {
             ids = payload.ids.slice();
-            if (typeof payload.type === "string" && payload.type) type = payload.type;
+            if (typeof payload.type === "string" && payload.type) {
+              type = payload.type;
+              typeFromPayload = true;
+            }
             return true;
           }
           if (Array.isArray(payload.selection?.ids)) {
             ids = payload.selection.ids.slice();
             const payloadType = payload.selection.type || payload.type;
-            if (typeof payloadType === "string" && payloadType) type = payloadType;
+            if (typeof payloadType === "string" && payloadType) {
+              type = payloadType;
+              typeFromPayload = true;
+            }
             return true;
           }
           return false;
@@ -68,7 +75,9 @@
         }
 
         if (Array.isArray(ids)) {
-          if (typeof svc.type === "string" && svc.type) type = svc.type;
+          if (!typeFromPayload && typeof svc.type === "string" && svc.type) {
+            type = svc.type;
+          }
           return { ids, type };
         }
       }
