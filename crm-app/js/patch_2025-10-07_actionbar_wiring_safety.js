@@ -11,13 +11,17 @@
       if (svc) {
         let ids;
         let type = scope;
+        let fromModernSource = false;
+        let payloadType;
 
         if (typeof svc.getIds === "function") {
           const result = svc.getIds();
           if (Array.isArray(result)) ids = result.slice();
           else if (result && typeof result[Symbol.iterator] === "function") ids = Array.from(result);
+          if (Array.isArray(ids)) fromModernSource = true;
         } else if (svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
           ids = Array.from(svc.ids);
+          if (Array.isArray(ids)) fromModernSource = true;
         }
 
         if (!Array.isArray(ids) && typeof svc.get === "function") {
@@ -25,13 +29,18 @@
           if (Array.isArray(payload?.ids)) {
             ids = payload.ids.slice();
             if (typeof payload.type === "string" && payload.type) type = payload.type;
+            payloadType = type;
           } else if (Array.isArray(payload)) {
             ids = payload.slice();
           }
         }
 
         if (Array.isArray(ids)) {
-          if (typeof svc.type === "string" && svc.type) type = svc.type;
+          if (typeof svc.type === "string" && svc.type) {
+            if (fromModernSource || (payloadType && svc.type === payloadType)) {
+              type = svc.type;
+            }
+          }
           return { ids, type };
         }
       }
