@@ -27,15 +27,18 @@
         let ids;
         let type = scope;
         let typeFromPayload = false;
+        let idsFromPayload = false;
 
         const assignFromPayload = (payload) => {
           if (!payload) return false;
           if (Array.isArray(payload)) {
             ids = payload.slice();
+            idsFromPayload = true;
             return true;
           }
           if (Array.isArray(payload.ids)) {
             ids = payload.ids.slice();
+            idsFromPayload = true;
             if (typeof payload.type === "string" && payload.type) {
               type = payload.type;
               typeFromPayload = true;
@@ -44,6 +47,7 @@
           }
           if (Array.isArray(payload.selection?.ids)) {
             ids = payload.selection.ids.slice();
+            idsFromPayload = true;
             const payloadType = payload.selection.type || payload.type;
             if (typeof payloadType === "string" && payloadType) {
               type = payloadType;
@@ -66,11 +70,11 @@
           assignFromPayload(svc.getSelection(scope));
         }
 
-        if (typeof svc.getIds === "function") {
+        if (!idsFromPayload && typeof svc.getIds === "function") {
           const result = svc.getIds();
           if (Array.isArray(result)) ids = result.slice();
           else if (result && typeof result[Symbol.iterator] === "function") ids = Array.from(result);
-        } else if (svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
+        } else if (!idsFromPayload && svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
           ids = Array.from(svc.ids);
         }
 
