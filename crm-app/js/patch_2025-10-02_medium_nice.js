@@ -496,6 +496,9 @@ export const __esModule = true;
 
   function setupMergeChooser() {
     const legacy = typeof window.mergeContactsWithIds === 'function' ? window.mergeContactsWithIds : null;
+    if (legacy && legacy.__fieldChooser) {
+      return;
+    }
 
     async function openMergeChooser(ids) {
       try {
