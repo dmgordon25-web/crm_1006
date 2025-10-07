@@ -233,13 +233,91 @@ try {
 # ---------- Invoke serve.ps1 and propagate status (no nested exit) ----------
 $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $serveExit = 0
+$serverReady = $false
+$targetUrl = $null
+$failureMessage = $null
+$debugging = ($env:CRM_DEBUG -eq "1") -or ($PSBoundParameters.ContainsKey('Verbose')) -or ($VerbosePreference -eq 'Continue')
+$script:ServerProcess = $null
+
 try {
-  & $serve -WorkingDirectory $ResolvedWebRoot -StateFile $StateFile @Remaining
-  if ($null -ne $LASTEXITCODE) { $serveExit = [int]$LASTEXITCODE } else { $serveExit = 0 }
-  if ($serveExit -ne 0) { throw "Server failed with exit code $serveExit" }
+  if ($debugging) {
+    Write-Log "[INFO] DEBUG mode detected; running server in foreground."
+    & $serve -WorkingDirectory $ResolvedWebRoot -StateFile $StateFile @Remaining
+    if ($null -ne $LASTEXITCODE) { $serveExit = [int]$LASTEXITCODE } else { $serveExit = 0 }
+    if ($serveExit -ne 0) { throw "Server failed with exit code $serveExit" }
+    $serverReady = $true
+  } else {
+    if (-not $env:CRM_SERVER_STARTED) {
+      $serveScript = Join-Path $PSScriptRoot 'serve.ps1'
+      $processArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serveScript, '-WorkingDirectory', $ResolvedWebRoot)
+      if ($StateFile) { $processArgs += @('-StateFile', $StateFile) }
+      if ($Remaining) { $processArgs += $Remaining }
+
+      try {
+        $script:ServerProcess = Start-Process -FilePath 'powershell' -ArgumentList $processArgs -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
+      } catch {
+        throw "Failed to start CRM server process: $($_.Exception.Message)"
+      }
+
+      if (-not $script:ServerProcess -or -not $script:ServerProcess.Id) {
+        throw "Failed to obtain CRM server process information."
+      }
+
+      Write-Log ("[INFO] CRM server process started (PID {0})" -f $script:ServerProcess.Id)
+      $env:CRM_SERVER_STARTED = 1
+    }
+
+    $pollIterations = 120
+    for ($i = 0; $i -lt $pollIterations; $i++) {
+      if ($script:ServerProcess) {
+        try { $script:ServerProcess.Refresh() } catch {}
+        if ($script:ServerProcess.HasExited) {
+          $exitCode = $null
+          try { $exitCode = $script:ServerProcess.ExitCode } catch {}
+          $msg = "CRM server process exited before becoming ready."
+          if ($null -ne $exitCode) { $msg += " Exit code: $exitCode." }
+          throw $msg
+        }
+      }
+
+      if (Test-Path $StateFile) {
+        try {
+          $raw = Get-Content -Path $StateFile -Raw -ErrorAction Stop
+          if ($raw) {
+            $state = $raw | ConvertFrom-Json
+            if ($state -and $state.Url) {
+              $candidateUrl = [string]$state.Url
+              if (Test-ServerAlive -Url $candidateUrl) {
+                $targetUrl = $candidateUrl
+                $serverReady = $true
+                break
+              }
+            }
+          }
+        } catch {
+          Write-Verbose "[START] Waiting for state file: $($_.Exception.Message)"
+        }
+      }
+
+      Start-Sleep -Milliseconds 500
+    }
+
+    if (-not $serverReady -or -not $targetUrl) {
+      throw "Server did not become ready within the expected time."
+    }
+
+    Write-Log "[INFO] CRM server ready at $targetUrl"
+  }
 } catch {
   $global:LAUNCH_FAILED = $true
-  Write-Log ("[ERROR] {0}" -f $_.Exception.Message)
+  $failureMessage = $_.Exception.Message
+  Write-Log ("[ERROR] {0}" -f $failureMessage)
+  if (-not $debugging -and $script:ServerProcess) {
+    try {
+      $script:ServerProcess.Refresh()
+      if (-not $script:ServerProcess.HasExited) { $script:ServerProcess.Kill() | Out-Null }
+    } catch {}
+  }
 } finally {
   if ($LAUNCH_FAILED -or $serveExit -ne 0) {
     Write-Log "[EXIT] failure. Log: $LogPath"
@@ -266,6 +344,12 @@ try {
         exit
       }
     } catch { }
+
+    if (-not $debugging) {
+      Start-Sleep -Milliseconds 500
+      try { $host.SetShouldExit(0) } catch {}
+      exit
+    }
     exit 0
   }
 }

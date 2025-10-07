@@ -445,10 +445,15 @@ function __textFallback__(k){ try { return (STR && STR[k]) || (__STR_FALLBACK__[
     profileState.phone = mergedProfile && mergedProfile.phone ? mergedProfile.phone : '';
     const mergedPhoto = typeof mergedProfile.photoDataUrl === 'string' ? mergedProfile.photoDataUrl : '';
     const persistedPhoto = SettingsPhoto.loadDataUrl();
-    profileState.photoDataUrl = persistedPhoto || mergedPhoto || '';
+    const removalPending = typeof SettingsPhoto.wasExplicitlyCleared === 'function' && SettingsPhoto.wasExplicitlyCleared();
+    profileState.photoDataUrl = removalPending ? '' : (persistedPhoto || mergedPhoto || '');
     const storedSignature = readSignatureLocal();
     profileState.signature = storedSignature || (mergedProfile && mergedProfile.signature ? mergedProfile.signature : '');
-    SettingsPhoto.saveDataUrl(profileState.photoDataUrl, { broadcast: false });
+    if (removalPending) {
+      SettingsPhoto.saveDataUrl('', { broadcast: false, notifyApp: false });
+    } else if (profileState.photoDataUrl !== persistedPhoto) {
+      SettingsPhoto.saveDataUrl(profileState.photoDataUrl, { broadcast: false });
+    }
     if(nameInput) nameInput.value = profileState.name;
     if(emailInput) emailInput.value = profileState.email;
     if(phoneInput) phoneInput.value = profileState.phone;
