@@ -198,6 +198,7 @@
       }
       merged.buyerPartnerId   = merged.buyerPartnerId   || buyerPartnerId;
       merged.listingPartnerId = merged.listingPartnerId || listingPartnerId;
+      merged.contactId = merged.contactId || merged.id;
       merged.updatedAt = Date.now();
       await putContact(merged);
       register(merged);
@@ -206,6 +207,7 @@
 
     const id = row.id || crypto?.randomUUID?.() || `c_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const rec = { id, ...row, buyerPartnerId, listingPartnerId };
+    rec.contactId = rec.contactId || rec.id;
     rec.createdAt = rec.createdAt || Date.now();
     await putContact(rec);
     register(rec);
