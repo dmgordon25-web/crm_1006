@@ -3,17 +3,29 @@
   if (window.__SEEDS_V1__) return; window.__SEEDS_V1__ = true;
 
   async function upsert(store, key, row){
-    try {
-      const existing = await window.db.get(store, key).catch(()=>null);
-      const rec = existing ? { ...existing, ...row, id: key } : { id: key, ...row };
-      await window.db.put(store, rec);
-    } catch {
-      // localStorage fallback
-      const k = `seed:${store}`;
-      const all = JSON.parse(localStorage.getItem(k)||"{}");
-      all[key] = { ...(all[key]||{}), ...row, id:key };
-      localStorage.setItem(k, JSON.stringify(all));
+    const dbGet = typeof window.dbGet === "function"
+      ? window.dbGet
+      : (window.db && typeof window.db.get === "function" ? window.db.get.bind(window.db) : null);
+    const dbPut = typeof window.dbPut === "function"
+      ? window.dbPut
+      : (window.db && typeof window.db.put === "function" ? window.db.put.bind(window.db) : null);
+
+    if (dbGet && dbPut){
+      try {
+        const existing = await dbGet(store, key).catch(()=>null);
+        const rec = existing ? { ...existing, ...row, id: key } : { id: key, ...row };
+        await dbPut(store, rec);
+        return;
+      } catch (_err) {
+        // fall back to localStorage below
+      }
     }
+
+    // localStorage fallback
+    const k = `seed:${store}`;
+    const all = JSON.parse(localStorage.getItem(k)||"{}");
+    all[key] = { ...(all[key]||{}), ...row, id:key };
+    localStorage.setItem(k, JSON.stringify(all));
   }
 
   async function runSeeds(){
