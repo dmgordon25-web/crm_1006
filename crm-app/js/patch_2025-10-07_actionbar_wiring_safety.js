@@ -4,10 +4,22 @@
 
   const DEBUG = !!(window.__ENV__?.DEBUG);
 
+  function resolveSelectionService() {
+    const svc = window.SelectionService ?? window.Selection ?? window.selectionService;
+    if (svc && !window.SelectionService && window.selectionService === svc) {
+      try {
+        window.SelectionService = svc;
+      } catch (err) {
+        if (DEBUG) console.warn("[actionbar] unable to promote selection service", err);
+      }
+    }
+    return svc || null;
+  }
+
   function getSelection() {
     const scope = document.body.getAttribute("data-scope") || "contacts";
     try {
-      const svc = window.SelectionService || window.Selection;
+      const svc = resolveSelectionService();
       if (svc) {
         let ids;
         let type = scope;
