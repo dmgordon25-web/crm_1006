@@ -1,5 +1,6 @@
 // patch_20250926_ctc_actionbar.js — stage canonicalization + hardened action bar
 import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
+import { openContactsMergeByIds } from '/js/contacts_merge_orchestrator.js';
 
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
@@ -280,6 +281,36 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
   let selectionLockWait = false;
   const pendingActions = new Map();
   const actionState = { busy:false, current:null };
+
+  function currentView(){
+    if(typeof window.__ROUTE__ === 'string' && window.__ROUTE__){
+      return window.__ROUTE__;
+    }
+    try{
+      const activeMain = document.querySelector('main[id^="view-"]:not(.hidden)');
+      if(activeMain && typeof activeMain.id === 'string'){
+        return activeMain.id.replace(/^view-/, '') || 'dashboard';
+      }
+    }catch(_err){}
+    try{
+      const activeNav = document.querySelector('#main-nav button[data-nav].active');
+      if(activeNav){
+        const navTarget = activeNav.getAttribute('data-nav');
+        if(navTarget) return navTarget;
+      }
+    }catch(_err){}
+    try{
+      const hash = typeof window.location?.hash === 'string' ? window.location.hash : (typeof location?.hash === 'string' ? location.hash : '');
+      if(hash){
+        const cleaned = hash.replace(/^#/, '').replace(/^\//, '');
+        if(cleaned){
+          const segment = cleaned.split('/')[0];
+          if(segment) return segment;
+        }
+      }
+    }catch(_err){}
+    return 'dashboard';
+  }
 
   function queueSelectionTick(){
     if(selectionTickScheduled) return;
@@ -783,18 +814,30 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
       case 'merge':{
         if(snap.type !== 'contacts'){ toast('Merge supports contacts only'); return { status:'cancel', dispatch:false }; }
         if(snap.ids.length !== 2){ toast('Select exactly two contacts to merge'); return { status:'cancel', dispatch:false }; }
-        if(typeof window.mergeContactsWithIds === 'function'){
-          try{
-            await window.mergeContactsWithIds(snap.ids.slice(0,2));
-            return { status:'ok', clear:true, dispatch:false, detail:{ merged: snap.ids.slice(0,2) } };
-          }catch(err){
-            console.error('mergeContactsWithIds', err);
-            toast('Merge failed');
-            return { status:'error', error: err, dispatch:false };
-          }
+        const ids = snap.ids.slice(0,2).map(id => String(id));
+        const route = currentView();
+        if(route !== 'contacts'){
+          console.warn('[merge] ignored merge outside contacts view', { route, ids });
+          return { status:'cancel', dispatch:false };
         }
-        warnMissing('mergeContactsWithIds');
-        return { status:'error', error:'mergeContactsWithIds missing', dispatch:false };
+        const mergeFn = typeof window.mergeContactsWithIds === 'function'
+          ? window.mergeContactsWithIds
+          : async (pair) => openContactsMergeByIds(pair[0], pair[1]);
+        try{
+          const result = await mergeFn(ids);
+          if(result && result.status === 'cancel'){
+            return { status:'cancel', dispatch:false };
+          }
+          if(result && result.status === 'error'){
+            toast('Merge failed');
+            return { status:'error', error: result.error || new Error('merge failed'), dispatch:false };
+          }
+          return { status:'ok', clear:true, dispatch:false, detail:{ merged: ids } };
+        }catch(err){
+          console.error('mergeContactsWithIds', err);
+          toast('Merge failed');
+          return { status:'error', error: err, dispatch:false };
+        }
       }
       case 'emailTogether':{
         const data = await ensureSelectionDetail();
