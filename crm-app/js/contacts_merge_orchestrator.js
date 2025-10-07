@@ -168,7 +168,7 @@ export async function openContactsMergeByIds(idA, idB) {
           if (typeof window.SelectionService?.clear === "function") window.SelectionService.clear("merge");
         } catch(_) {}
         try {
-          const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge" }});
+          const evt = new CustomEvent("selection:change", { detail: { clearedBy: "merge" }});
           window.dispatchEvent(evt);
         } catch(_) {}
         try {
@@ -191,7 +191,7 @@ export async function openContactsMergeByIds(idA, idB) {
           // Clear selection and repaint once
           try { window.Selection?.clear?.(); } catch(_) {}
           try {
-            const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge" }});
+            const evt = new CustomEvent("selection:change", { detail: { clearedBy: "merge" }});
             window.dispatchEvent(evt);
           } catch(_) {}
           try { window.dispatchAppDataChanged?.("contacts:merge"); } catch(_) {}
