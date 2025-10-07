@@ -1,123 +1,83 @@
-const LS_KEY = 'notif:v1';
-const MAX_ITEMS = 200;
-const SUBS = new Set();
-let STATE = { items: [], unread: 0 };
-let writeTimer = null;
-let coalesceTimer = null;
-let coalesceBucket = null; // {type:'data-change', n:number, at}
+/* eslint-disable no-console */
+// Simple, durable notifier with stable queue shape + change events.
+const EVT = "notifications:changed";
+const KEY = "notifications:queue";
 
-function now(){ return Date.now(); }
-function load(){
-  try { STATE = JSON.parse(localStorage.getItem(LS_KEY)) || STATE; }
-  catch(_) {}
-  recount();
+function safeParse(json) {
+  try { return JSON.parse(json); } catch(_) { return null; }
 }
-function saveDebounced(){
-  if (writeTimer) return;
-  writeTimer = setTimeout(() => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(STATE)); } catch(_) {}
-    writeTimer = null;
-  }, 250);
+
+function readStorage() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    const arr = safeParse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch(_) { return []; }
 }
-function recount(){
-  STATE.unread = STATE.items.reduce((a,x)=>a + (x.read?0:1), 0);
+
+function writeStorage(list) {
+  try { localStorage.setItem(KEY, JSON.stringify(list || [])); } catch(_) {}
 }
-function notify(){
-  recount();
-  saveDebounced();
-  SUBS.forEach(fn => { try{ fn(STATE); }catch(_){} });
-  try{
-    if(typeof window !== 'undefined' && typeof window.dispatchEvent === 'function'){
-      window.dispatchEvent(new CustomEvent('notifications:changed', {
-        detail: { count: STATE.items.length, unread: STATE.unread }
-      }));
+
+function normalizeItem(x) {
+  if (!x || typeof x !== "object") return null;
+  const id = x.id || x.uuid || x.key || String(Date.now() + Math.random());
+  const ts = Number(x.ts || x.time || Date.now());
+  const type = String(x.type || "info");
+  const title = String(x.title || x.message || "");
+  const meta = (x.meta && typeof x.meta === "object") ? x.meta : {};
+  return { id, ts, type, title, meta };
+}
+
+const Notifier = (function() {
+  // In-memory cache; always keep an Array
+  let queue = Array.isArray(window.__NOTIF_QUEUE__) ? window.__NOTIF_QUEUE__ : null;
+  if (!queue) {
+    queue = readStorage();
+    window.__NOTIF_QUEUE__ = queue; // keep a single reference
+  }
+
+  function emit() {
+    writeStorage(queue);
+    try { window.dispatchEvent(new CustomEvent(EVT)); } catch(_) {}
+  }
+
+  return {
+    getCount() { return Array.isArray(queue) ? queue.length : 0; },
+    list() { return Array.isArray(queue) ? queue.slice() : []; },
+    push(item) {
+      const n = normalizeItem(item);
+      if (!n) return false;
+      queue.push(n);
+      emit(); return true;
+    },
+    remove(id) {
+      if (!id) return false;
+      const before = queue.length;
+      // FIX: never use reduce on undefined
+      for (let i = queue.length - 1; i >= 0; i--) if (queue[i]?.id === id) queue.splice(i, 1);
+      if (queue.length !== before) emit();
+      return before !== queue.length;
+    },
+    clear() {
+      if (!queue.length) return 0;
+      const n = queue.length;
+      queue.length = 0;
+      emit(); return n;
+    },
+    onChanged(handler) {
+      try { window.addEventListener(EVT, handler); } catch(_) {}
+      return () => { try { window.removeEventListener(EVT, handler); } catch(_) {} };
     }
-  }catch(_){ }
-}
-function pushRaw(item){
-  STATE.items.unshift(item);
-  if (STATE.items.length > MAX_ITEMS) STATE.items.length = MAX_ITEMS;
-  notify();
-}
-function coalesceDataChanged(detail){
-  const at = now();
-  if (!coalesceBucket) {
-    coalesceBucket = { type:'data-change', n:1, at, title:'Data updated', read:false, id:`dc:${at}` };
-  } else {
-    coalesceBucket.n += 1;
-    coalesceBucket.at = at;
-  }
-  clearTimeout(coalesceTimer);
-  coalesceTimer = setTimeout(() => {
-    const msg = coalesceBucket.n === 1 ? 'Data updated' : `Data updated (${coalesceBucket.n} changes)`;
-    pushRaw({ id: coalesceBucket.id, type: 'data-change', title: msg, at: coalesceBucket.at, read:false });
-    coalesceBucket = null;
-  }, 700); // batch bursts
-}
+  };
+})();
 
-export function markAllRead(){
-  const hadItems = STATE.items.length > 0 || STATE.unread > 0 || !!coalesceBucket;
-  STATE.items = [];
-  STATE.unread = 0;
-  coalesceBucket = null;
-  clearTimeout(coalesceTimer); coalesceTimer = null;
-  notify();
-  if(writeTimer){
-    clearTimeout(writeTimer);
-    writeTimer = null;
-  }
-  try { localStorage.removeItem(LS_KEY); }
-  catch(_){ }
-}
-
-// Public API
-export const Notifier = {
-  list(){ return STATE.items.slice(); },
-  unread(){ return STATE.unread|0; },
-  push({ type='info', title, at=now(), read=false, id }){
-    if (!title) return;
-    pushRaw({ id: id || `${type}:${at}:${Math.random().toString(36).slice(2,7)}`, type, title, at, read });
-  },
-  markAllRead(){ markAllRead(); },
-  clearAll(){ markAllRead(); },
-  subscribe(fn){ SUBS.add(fn); fn(STATE); return () => SUBS.delete(fn); }
-};
-
-export function getNotificationsCount(){
-  try{
-    if(typeof window !== 'undefined' && Array.isArray(window.__NOTIF_QUEUE__)){
-      return window.__NOTIF_QUEUE__.length;
-    }
-  }catch(_){ }
-  return Number.isFinite(STATE?.items?.length) ? STATE.items.length : 0;
-}
-
-// Boot
-load();
-
-// Listen to likely sources; do not modify those modules.
-if(typeof document !== 'undefined'){
-  document.addEventListener('app:data:changed', (e) => {
-    coalesceDataChanged(e && e.detail);
-  });
-  document.addEventListener('importer:status', (e) => {
-    const d = e && e.detail || {};
-    if (d && d.phase) Notifier.push({ type:'import', title:`Import ${d.phase}` });
-  });
-  document.addEventListener('seed:done', () => {
-    Notifier.push({ type:'seed', title:'Seed completed' });
-  });
-}
-
-// Hook to RenderGuard to repaint badge only once per notification changes
-try {
-  if (window.RenderGuard && typeof window.RenderGuard.registerHook === 'function') {
-    Notifier.subscribe(() => { window.RenderGuard.requestRender && window.RenderGuard.requestRender(); });
-  }
-} catch(_) {}
-
-try {
-  if(typeof window !== 'undefined'){
-    window.getNotificationsCount = getNotificationsCount;
-  }
-}catch(_){ }
+// Expose a stable global and named exports
+window.Notifier = window.Notifier || Notifier;
+export const getNotificationsCount = () => Notifier.getCount();
+export const listNotifications       = () => Notifier.list();
+export const pushNotification        = (item) => Notifier.push(item);
+export const removeNotification      = (id) => Notifier.remove(id);
+export const clearNotifications      = () => Notifier.clear();
+export const onNotificationsChanged  = (h) => Notifier.onChanged(h);
+export default Notifier;

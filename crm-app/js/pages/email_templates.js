@@ -165,9 +165,9 @@ export function renderEmailTemplates(root) {
       const record = Templates.upsert({ id, name, subject, body });
       currentId = record.id;
       try {
-        const { Notifier } = await import('/js/notifications/notifier.js');
-        if (Notifier && typeof Notifier.push === 'function') {
-          Notifier.push({ type: 'templates', title: 'Template saved' });
+        const { pushNotification } = await import('/js/notifications/notifier.js');
+        if (typeof pushNotification === 'function') {
+          pushNotification({ type: 'templates', title: 'Template saved' });
         }
       } catch {}
     }
