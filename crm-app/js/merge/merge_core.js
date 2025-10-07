@@ -101,3 +101,33 @@ export function pickWinnerContact(a, b) {
   const sa = nonEmpty(a), sb = nonEmpty(b);
   return sa >= sb ? "A" : "B";
 }
+
+export function mergePartners(a, b, picks) {
+  // Similar policy to contacts; tailor fields if needed
+  const template = Object.assign({}, a, b);
+  const result = {};
+  for (const field of Object.keys(template)) {
+    if (/^id$/i.test(field) || /^createdAt$/i.test(field) || /^updatedAt$/i.test(field) || /^__/.test(field)) continue;
+    const pick = picks?.[field];
+    if (pick === "NONE") continue;
+
+    if (Array.isArray(a?.[field]) || Array.isArray(b?.[field])) {
+      if (pick === "A") result[field] = Array.isArray(a?.[field]) ? a[field] : [];
+      else if (pick === "B") result[field] = Array.isArray(b?.[field]) ? b[field] : [];
+      else result[field] = unionArray(a?.[field], b?.[field], "id");
+      continue;
+    }
+    if (pick === "A") { result[field] = a?.[field]; continue; }
+    if (pick === "B") { result[field] = b?.[field]; continue; }
+    result[field] = chooseValue(field, a, b).value;
+  }
+  result.updatedAt = Date.now();
+  return result;
+}
+
+export function pickWinnerPartner(a, b) {
+  // Prefer record with more non-empty fields; tie → A
+  const nonEmpty = (obj) => Object.keys(obj || {}).reduce((n, k) => n + (isNonEmpty(obj[k]) ? 1 : 0), 0);
+  const sa = nonEmpty(a), sb = nonEmpty(b);
+  return sa >= sb ? "A" : "B";
+}

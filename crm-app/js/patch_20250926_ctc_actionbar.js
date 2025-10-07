@@ -1,6 +1,64 @@
 // patch_20250926_ctc_actionbar.js — stage canonicalization + hardened action bar
 import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
 import { openContactsMergeByIds } from '/js/contacts_merge_orchestrator.js';
+import { openPartnersMergeByIds } from '/js/partners_merge_orchestrator.js';
+
+if (!window.__WIRED_ACTIONBAR_MERGE_DELEGATE__) {
+  window.__WIRED_ACTIONBAR_MERGE_DELEGATE__ = true;
+
+  const MERGE_SELECTORS = ['[data-action="merge"]', '.action-merge', '#btnMerge'];
+
+  function getSelectedIds() {
+    try {
+      if (window.Selection?.getSelectedIds) return window.Selection.getSelectedIds() || [];
+      if (window.SelectionService?.getSelectedIds) return window.SelectionService.getSelectedIds() || [];
+    } catch(_) {}
+    // DOM fallback
+    try {
+      return Array.from(document.querySelectorAll('[data-selectable].selected,[data-row].is-selected,tr.selected,[data-selected="true"]'))
+        .map(el => el.getAttribute('data-id') || el.id).filter(Boolean);
+    } catch(_) {}
+    return [];
+  }
+
+  function getActiveView() {
+    // Prefer explicit tab/view markers
+    const activeTab = document.querySelector('.tab.active[data-tab]');
+    if (activeTab && activeTab.getAttribute('data-tab')) return activeTab.getAttribute('data-tab');
+    const route = (window.__ROUTE__ || "").toLowerCase();
+    if (route) return route;
+    // Heuristics: presence of view roots
+    if (document.querySelector('#contacts-view,[data-view="contacts"],.contacts-view')) return 'contacts';
+    if (document.querySelector('#partners-view,[data-view="partners"],.partners-view')) return 'partners';
+    return '';
+  }
+
+  document.addEventListener('click', (e) => {
+    const target = e.target && (e.target.closest ? e.target.closest(MERGE_SELECTORS.join(',')) : null);
+    if (!target) return;
+    const ids = getSelectedIds();
+    if (!Array.isArray(ids) || ids.length !== 2) return; // enablement should already prevent this
+
+    const view = getActiveView();
+    try {
+      if (view === 'contacts') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+        openContactsMergeByIds(ids[0], ids[1]);
+      } else if (view === 'partners') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+        openPartnersMergeByIds(ids[0], ids[1]);
+      } else {
+        console.warn('[merge] Merge clicked but active view not recognized; expected contacts or partners. ids=', ids);
+      }
+    } catch (err) {
+      console.error('[merge] click handler failed', err);
+    }
+  }, true);
+}
 
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
