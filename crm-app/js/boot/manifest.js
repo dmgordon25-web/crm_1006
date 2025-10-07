@@ -69,9 +69,10 @@ export const PATCHES = [
   "/js/patch_2025-10-03_quick_add_partner.js",
   "/js/patch_2025-10-03_automation_seed.js",
   "/js/patch_2025-10-07_wire_diag_and_stage_tracker.js",
-  "/js/patch_2025-10-07_actionbar_wiring_safety.js",
   "/js/patch_2025-10-07_dashboard_initial_refresh.js",
   "/js/patch_2025-10-07_settings_profile_photo_ui.js",
+  "/js/patch_2025-10-08_selection_guard.js",
+  "/js/patch_2025-10-08_actionbar_harden.js",
 ];
 
 export default {
