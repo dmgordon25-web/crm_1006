@@ -253,7 +253,8 @@ try {
     Write-Log "[EXIT] success."
     try {
       # If we reached here, server is up and browser launched; exit this host so the console closes.
-      if (-not $env:CRM_DEBUG -and -not $DebugPreference) {
+      # Respect the explicit CRM_DEBUG escape hatch so developers can keep the host open when needed.
+      if (-not $env:CRM_DEBUG) {
         Start-Sleep -Seconds 1
         $host.SetShouldExit(0)
         exit
