@@ -5,12 +5,29 @@
   const DEBUG = !!(window.__ENV__?.DEBUG);
 
   function getSelection() {
+    const scope = document.body?.getAttribute?.("data-scope") || "contacts";
     try {
-      const sel = window.selectionService?.get?.(document.body.getAttribute("data-scope") || "contacts");
-      if (Array.isArray(sel)) return { ids: sel, type: "contacts" };
-      if (Array.isArray(sel?.ids)) return { ids: sel.ids, type: sel.type || "contacts" };
+      const svc = window.SelectionService || window.selectionService;
+      if (!svc) return { ids: [], type: scope };
+
+      if (typeof svc.snapshot === "function") {
+        const snap = svc.snapshot();
+        if (Array.isArray(snap?.ids)) {
+          return { ids: snap.ids.map(String), type: snap.type || scope };
+        }
+      }
+
+      const rawIds = typeof svc.getIds === "function"
+        ? svc.getIds()
+        : (Array.isArray(svc.ids) ? svc.ids : svc.ids && typeof svc.ids.values === "function" ? Array.from(svc.ids.values()) : []);
+
+      const ids = Array.isArray(rawIds) ? rawIds : (rawIds && typeof rawIds[Symbol.iterator] === "function" ? Array.from(rawIds) : []);
+      if (ids.length) {
+        const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
+        return { ids: ids.map(String), type };
+      }
     } catch {}
-    return { ids: [], type: "contacts" };
+    return { ids: [], type: scope };
   }
 
   function recalcEnablement() {
