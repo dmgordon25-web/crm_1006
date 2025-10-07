@@ -4,12 +4,17 @@
 
   async function exportJSON(){
     const out = { contacts:[], partners:[], events:[], documents:[] };
-    try {
-      out.contacts  = await window.db.getAll?.("contacts")  || out.contacts;
-      out.partners  = await window.db.getAll?.("partners")  || out.partners;
-      out.events    = await window.db.getAll?.("events")    || out.events;
-      out.documents = await window.db.getAll?.("documents") || out.documents;
-    } catch {}
+    const dbGetAll = typeof window.dbGetAll === "function"
+      ? window.dbGetAll
+      : (window.db && typeof window.db.getAll === "function" ? window.db.getAll.bind(window.db) : null);
+    if (dbGetAll){
+      try {
+        out.contacts  = await dbGetAll("contacts")  || out.contacts;
+        out.partners  = await dbGetAll("partners")  || out.partners;
+        out.events    = await dbGetAll("events")    || out.events;
+        out.documents = await dbGetAll("documents") || out.documents;
+      } catch (_err){}
+    }
     const blob = new Blob([JSON.stringify(out,null,2)], {type:"application/json"});
     const url  = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download=`crm_snapshot_${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -19,7 +24,14 @@
     const json = await file.text();
     const data = JSON.parse(json);
     async function putAll(store, rows){
-      for (const r of (rows||[])){ try { await window.db.put(store, r); } catch {} }
+      const dbPut = typeof window.dbPut === "function"
+        ? window.dbPut
+        : (window.db && typeof window.db.put === "function" ? window.db.put.bind(window.db) : null);
+      if (!dbPut) return;
+      for (const r of (rows||[])){
+        try { await dbPut(store, r); }
+        catch (_err){}
+      }
     }
     await putAll("partners",  data.partners);
     await putAll("contacts",  data.contacts);
