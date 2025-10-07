@@ -1,62 +1,168 @@
 /* P6c: Calendar export wiring (idempotent) */
 (function(){
-  if (window.__WIRED_ICS__) return; window.__WIRED_ICS__ = true;
+  if (window.__CAL_EXPORT_WIRED__) return;
+  window.__CAL_EXPORT_WIRED__ = true;
 
-  function currentSelection(){
-    // Prefer the selection service when available
-    if (window.selectionService && typeof window.selectionService.get === "function"){
+  function ensureCalendarButtons(){
+    const host = document.querySelector('[data-view="calendar"] [data-role="toolbar"]')
+      || document.querySelector('[data-view="calendar"]')
+      || document.body
+      || document;
+    if (!host) return;
+
+    const ensureOne = (selector, build) => {
+      const list = host.querySelectorAll(selector);
+      if (list.length > 1) {
+        [...list].slice(1).forEach((node) => node.remove());
+        return list[0];
+      }
+      if (list.length === 1) return list[0];
+      const el = build();
+      host.appendChild(el);
+      return el;
+    };
+
+    ensureOne('[data-act="calendar:export:ics"]', () => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-act", "calendar:export:ics");
+      button.textContent = "Export ICS";
+      return button;
+    });
+
+    ensureOne('[data-act="calendar:export:csv"]', () => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("data-act", "calendar:export:csv");
+      button.textContent = "Export CSV";
+      return button;
+    });
+  }
+
+  function currentSelectionIds(){
+    if (window.selectionService?.get){
       const sel = window.selectionService.get("calendar");
-      // sel might be an object { ids, type } — normalize to string[] of ids
       const ids = Array.isArray(sel) ? sel : (Array.isArray(sel?.ids) ? sel.ids : []);
       if (ids.length) return ids;
     }
-    // Fallback: selected rows in Calendar view
-    const rows = Array.from(document.querySelectorAll(
-      '[data-view="calendar"] [data-event][aria-selected="true"]'
-    ));
-    return rows.map(r => r.getAttribute("data-event-id")).filter(Boolean);
+    const rows = Array.from(document.querySelectorAll('[data-view="calendar"] [data-event][aria-selected="true"]'));
+    return rows.map((row) => row.getAttribute("data-event-id")).filter(Boolean);
   }
 
-  async function fetchEvents(ids){
-    // Project’s existing data source; fallback to window.db if available
-    const list = [];
-    if (Array.isArray(ids) && ids.length){
-      for (const id of ids){
-        let ev = null;
-        try { ev = await window.db?.get?.("events", id); } catch {}
-        if (ev) list.push(ev);
-      }
-      return list;
+  async function eventsForExport(ids = currentSelectionIds()){
+    const fromStore = async (value) => {
+      if (value && typeof value.then === "function") return value;
+      return value;
+    };
+
+    if (ids.length && typeof window.CalendarStore?.getEventsByIds === "function") {
+      const events = await fromStore(window.CalendarStore.getEventsByIds(ids));
+      if (Array.isArray(events) && events.length) return events;
     }
-    // Fallback: pull visible month’s events from UI adapters if present
-    return window.CalendarAPI?.visibleEvents?.() || [];
+
+    if (typeof window.CalendarStore?.visibleEvents === "function") {
+      const events = await fromStore(window.CalendarStore.visibleEvents());
+      if (Array.isArray(events) && events.length) return events;
+      if (events) return events;
+    }
+
+    if (ids.length && window.db?.get){
+      const result = [];
+      for (const id of ids){
+        try {
+          const event = await window.db.get("events", id);
+          if (event) result.push(event);
+        } catch (error) {
+          console.warn("calendar export: failed to load event", id, error);
+        }
+      }
+      if (result.length) return result;
+    }
+
+    const nodes = Array.from(document.querySelectorAll('[data-view="calendar"] [data-event]'));
+    return nodes.map((node) => ({
+      id: node.getAttribute("data-event-id"),
+      title: node.getAttribute("data-title") || node.textContent?.trim() || "Event",
+      start: node.getAttribute("data-start"),
+      end: node.getAttribute("data-end")
+    }));
   }
 
-  function mapToIcsShape(ev){
+  function download(filename, text, mime = "text/plain;charset=utf-8"){
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function toCSV(events){
+    const header = ["Title", "Start", "End", "ID"];
+    const rows = (events || []).map((event) => [
+      (event.title || "").replace(/"/g, '""'),
+      event.start || "",
+      event.end || "",
+      event.id || ""
+    ]);
+    const csv = [header, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\r\n");
+    return csv;
+  }
+
+  function mapEventForICS(event){
     return {
-      id: ev.id,
-      title: ev.title || ev.summary || "Event",
-      desc: ev.description || "",
-      location: ev.location || "",
-      start: ev.start, end: ev.end,
-      allDay: !!ev.allDay
+      id: event.id || event.eventId,
+      title: event.title || event.summary || event.name || "Event",
+      desc: event.description || event.desc || event.notes || "",
+      location: event.location || event.place || "",
+      start: event.start || event.startDate || event.start_at,
+      end: event.end || event.endDate || event.end_at,
+      allDay: Boolean(event.allDay ?? event.isAllDay ?? false)
     };
   }
 
-  async function exportSelection(){
-    const ids = currentSelection();
-    const events = await fetchEvents(ids);
-    const ics = window.CRM_ICS.buildICS(events.map(mapToIcsShape));
-    window.CRM_ICS.downloadICS(ids?.length===1 ? `event-${ids[0]}.ics` : `events-${Date.now()}.ics`, ics);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensureCalendarButtons, { once: true });
+  } else {
+    ensureCalendarButtons();
   }
+  document.addEventListener("app:data:changed", ensureCalendarButtons);
 
-  // Delegated buttons (no HTML edits): look for data-act hooks
-  document.addEventListener("click", (e)=>{
-    const btn = e.target?.closest?.('[data-act="calendar:export:ics"],[data-act="calendar:export:ics:batch"]');
-    if (!btn) return;
-    e.preventDefault();
-    exportSelection().then(()=>{
+  document.addEventListener("click", async (event) => {
+    const icsBtn = event.target.closest?.('[data-act="calendar:export:ics"]');
+    const csvBtn = !icsBtn && event.target.closest?.('[data-act="calendar:export:csv"]');
+    if (!icsBtn && !csvBtn) return;
+
+    event.preventDefault();
+    const ids = currentSelectionIds();
+    const events = await eventsForExport(ids);
+
+    if (icsBtn) {
+      let icsContent = null;
+      if (typeof window.buildICS === "function") {
+        icsContent = window.buildICS(events);
+      } else if (typeof window.CalendarICS?.build === "function") {
+        icsContent = window.CalendarICS.build(events);
+      } else if (typeof window.CRM_ICS?.buildICS === "function") {
+        icsContent = window.CRM_ICS.buildICS((events || []).map(mapEventForICS));
+      }
+
+      if (!icsContent) return;
+      const filename = ids.length === 1 ? `event-${ids[0]}.ics` : `events-${Date.now()}.ics`;
+      if (typeof window.CRM_ICS?.downloadICS === "function") {
+        window.CRM_ICS.downloadICS(filename, icsContent);
+      } else {
+        download(filename, icsContent, "text/calendar;charset=utf-8");
+      }
       window.dispatchAppDataChanged?.("calendar:export:ics");
-    });
+    } else if (csvBtn) {
+      const csv = toCSV(events || []);
+      const filename = ids.length === 1 ? `event-${ids[0]}.csv` : `events-${Date.now()}.csv`;
+      download(filename, csv, "text/csv;charset=utf-8");
+      window.dispatchAppDataChanged?.("calendar:export:csv");
+    }
   }, true);
 })();

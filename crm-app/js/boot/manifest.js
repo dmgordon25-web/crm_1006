@@ -73,6 +73,7 @@ export const PATCHES = [
   "/js/patch_2025-10-07_settings_profile_photo_ui.js",
   "/js/patch_2025-10-08_selection_guard.js",
   "/js/patch_2025-10-08_actionbar_harden.js",
+  "/js/patch_2025-10-08_partners_edit_router.js",
 ];
 
 export default {
