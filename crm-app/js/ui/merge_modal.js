@@ -66,11 +66,14 @@ export function openMergeModal({ kind = "contacts", recordA, recordB, onConfirm,
   const node = tpl.content.firstElementChild;
   document.body.appendChild(node);
 
-  const cleanup = () => { try { node.remove(); } catch(_){}; window[guard] = false; };
-  const cancel = () => { cleanup(); onCancel?.(); };
+  const close = ({ triggerCancel = false } = {}) => {
+    try { node.remove(); } catch(_){}
+    window[guard] = false;
+    if (triggerCancel) onCancel?.();
+  };
 
-  node.querySelector(".merge-close")?.addEventListener("click", cancel);
-  node.querySelector(".merge-cancel")?.addEventListener("click", cancel);
+  node.querySelector(".merge-close")?.addEventListener("click", () => close({ triggerCancel: true }));
+  node.querySelector(".merge-cancel")?.addEventListener("click", () => close({ triggerCancel: true }));
   node.querySelector(".merge-confirm")?.addEventListener("click", async () => {
     const picks = {};
     node.querySelectorAll('.merge-row').forEach(row => {
@@ -84,7 +87,7 @@ export function openMergeModal({ kind = "contacts", recordA, recordB, onConfirm,
     } catch (err) {
       console.error(err);
     } finally {
-      cleanup();
+      close();
     }
   });
 }
