@@ -6,58 +6,60 @@ import { openPartnersMergeByIds } from '/js/partners_merge_orchestrator.js';
 if (!window.__WIRED_ACTIONBAR_MERGE_DELEGATE__) {
   window.__WIRED_ACTIONBAR_MERGE_DELEGATE__ = true;
 
-  const MERGE_SELECTORS = ['[data-action="merge"]', '.action-merge', '#btnMerge'];
+  // Include data-act="merge" — this is the critical selector per current DOM
+  const MERGE_SELECTORS = ['[data-act="merge"]', '[data-action="merge"]', '.action-merge', '#btnMerge'];
 
   function getSelectedIds() {
+    try { if (window.Selection?.getSelectedIds) return window.Selection.getSelectedIds() || []; } catch(_){ }
+    try { if (window.SelectionService?.getSelectedIds) return window.SelectionService.getSelectedIds() || []; } catch(_){ }
     try {
-      if (window.Selection?.getSelectedIds) return window.Selection.getSelectedIds() || [];
-      if (window.SelectionService?.getSelectedIds) return window.SelectionService.getSelectedIds() || [];
-    } catch(_) {}
-    // DOM fallback
-    try {
-      return Array.from(document.querySelectorAll('[data-selectable].selected,[data-row].is-selected,tr.selected,[data-selected="true"]'))
-        .map(el => el.getAttribute('data-id') || el.id).filter(Boolean);
+      return Array.from(document.querySelectorAll(
+        '[data-selectable].selected,[data-row].is-selected,tr.selected,[data-selected="true"]'
+      )).map(el => el.getAttribute('data-id') || el.id).filter(Boolean);
     } catch(_) {}
     return [];
   }
 
-  function getActiveView() {
-    // Prefer explicit tab/view markers
+  function inferViewFromDOM() {
+    // Priority 1: active tab
     const activeTab = document.querySelector('.tab.active[data-tab]');
-    if (activeTab && activeTab.getAttribute('data-tab')) return activeTab.getAttribute('data-tab');
-    const route = (window.__ROUTE__ || "").toLowerCase();
-    if (route) return route;
-    // Heuristics: presence of view roots
+    if (activeTab?.getAttribute('data-tab')) return activeTab.getAttribute('data-tab').toLowerCase();
+    // Priority 2: explicit route flag
+    if (window.__ROUTE__) return String(window.__ROUTE__).toLowerCase();
+    // Priority 3: visible view roots
     if (document.querySelector('#contacts-view,[data-view="contacts"],.contacts-view')) return 'contacts';
     if (document.querySelector('#partners-view,[data-view="partners"],.partners-view')) return 'partners';
+    // Priority 4: from selected rows’ container
+    const row = document.querySelector('[data-selectable].selected, tr.selected, [data-row].is-selected');
+    if (row) {
+      const host = row.closest('[data-view], .contacts-view, .partners-view, #contacts-view, #partners-view');
+      const tag = host?.getAttribute?.('data-view') || (host?.className || '') + ' ' + (host?.id || '');
+      if (/partners/i.test(tag)) return 'partners';
+      if (/contacts/i.test(tag)) return 'contacts';
+    }
     return '';
   }
 
   document.addEventListener('click', (e) => {
-    const target = e.target && (e.target.closest ? e.target.closest(MERGE_SELECTORS.join(',')) : null);
-    if (!target) return;
-    const ids = getSelectedIds();
-    if (!Array.isArray(ids) || ids.length !== 2) return; // enablement should already prevent this
+    const trigger = e.target?.closest?.(MERGE_SELECTORS.join(',')) || null;
+    if (!trigger) return;
 
-    const view = getActiveView();
+    const ids = getSelectedIds();
+    if (ids.length !== 2) return; // enablement already handled; double-check anyway
+
+    const view = inferViewFromDOM();
     try {
       if (view === 'contacts') {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
         openContactsMergeByIds(ids[0], ids[1]);
       } else if (view === 'partners') {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
         openPartnersMergeByIds(ids[0], ids[1]);
       } else {
-        console.warn('[merge] Merge clicked but active view not recognized; expected contacts or partners. ids=', ids);
+        console.warn('[merge] Unable to infer active view; expected contacts or partners. ids=', ids);
       }
     } catch (err) {
-      console.error('[merge] click handler failed', err);
+      console.error('[merge] handler failed', err);
     }
-  }, true);
+  }, false);
 }
 
 (function(){
@@ -1014,18 +1016,27 @@ if (!window.__WIRED_ACTIONBAR_MERGE_DELEGATE__) {
         return { status:'error', error:'renderContactModal missing', dispatch:false };
       }
       case 'merge':{
-        if(snap.type === 'partners'){ toast('Merge supports contacts only'); return { status:'cancel', dispatch:false }; }
-        if(snap.ids.length !== 2){ toast('Select exactly two contacts to merge'); return { status:'cancel', dispatch:false }; }
+        if(!snap.ids || snap.ids.length !== 2){ toast('Select exactly two records to merge'); return { status:'cancel', dispatch:false }; }
         const ids = snap.ids.slice(0,2).map(id => String(id));
-        const route = currentView();
-        if(route !== 'contacts'){
-          console.warn('[merge] ignored merge outside contacts view', { route, ids });
-          return { status:'cancel', dispatch:false };
-        }
-        const mergeFn = typeof window.mergeContactsWithIds === 'function'
-          ? window.mergeContactsWithIds
-          : async (pair) => openContactsMergeByIds(pair[0], pair[1]);
+        const snapType = typeof snap.type === 'string' ? snap.type.toLowerCase() : '';
+        const route = (currentView() || '').toLowerCase();
+        const view = snapType || route;
+        const isPartners = view === 'partners';
         try{
+          if(isPartners){
+            const result = await openPartnersMergeByIds(ids[0], ids[1]);
+            if(result && result.status === 'cancel'){
+              return { status:'cancel', dispatch:false };
+            }
+            if(result && result.status === 'error'){
+              toast('Merge failed');
+              return { status:'error', error: result.error || new Error('merge failed'), dispatch:false };
+            }
+            return { status:'ok', clear:true, dispatch:false, detail:{ merged: ids, entity:'partners' } };
+          }
+          const mergeFn = typeof window.mergeContactsWithIds === 'function'
+            ? window.mergeContactsWithIds
+            : async (pair) => openContactsMergeByIds(pair[0], pair[1]);
           const result = await mergeFn(ids);
           if(result && result.status === 'cancel'){
             return { status:'cancel', dispatch:false };
@@ -1034,9 +1045,9 @@ if (!window.__WIRED_ACTIONBAR_MERGE_DELEGATE__) {
             toast('Merge failed');
             return { status:'error', error: result.error || new Error('merge failed'), dispatch:false };
           }
-          return { status:'ok', clear:true, dispatch:false, detail:{ merged: ids } };
+          return { status:'ok', clear:true, dispatch:false, detail:{ merged: ids, entity:'contacts' } };
         }catch(err){
-          console.error('mergeContactsWithIds', err);
+          console.error('[merge] orchestrator failed', err);
           toast('Merge failed');
           return { status:'error', error: err, dispatch:false };
         }
@@ -1383,12 +1394,13 @@ if (!window.__WIRED_ACTIONBAR_MERGE_DELEGATE__) {
     bar.addEventListener('click', evt => {
       const btn = evt.target && evt.target.closest('[data-act]');
       if(!btn) return;
+      const act = btn.dataset.act;
+      if(!act) return;
+      if(act === 'merge') return;
       evt.preventDefault();
       evt.stopPropagation();
       evt.stopImmediatePropagation();
       if(btn.disabled) return;
-      const act = btn.dataset.act;
-      if(!act) return;
       executeAction(act);
     }, true);
   }

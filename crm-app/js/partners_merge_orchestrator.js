@@ -93,39 +93,53 @@ async function relinkPartnerReferences(winnerId, loserId) {
 
 export async function openPartnersMergeByIds(idA, idB) {
   const [a, b] = await Promise.all([dbGetSafe("partners", idA), dbGetSafe("partners", idB)]);
-  if (!a || !b) { console.error("[merge] partners not found", { idA, idB, a: !!a, b: !!b }); return; }
+  if (!a || !b) {
+    const error = new Error("partners not found");
+    console.error("[merge] partners not found", { idA, idB, a: !!a, b: !!b });
+    return { status: "error", error };
+  }
 
-  openMergeModal({
-    kind: "partners",
-    recordA: a,
-    recordB: b,
-    onConfirm: async (picks) => {
-      try {
-        const winner = pickWinnerPartner(a, b); // "A" or "B"
-        const winnerRec = winner === "A" ? a : b;
-        const loserRec  = winner === "A" ? b : a;
-        const winnerId  = winnerRec.id ?? idA;
-        const loserId   = loserRec.id  ?? idB;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      resolve(payload);
+    };
 
-        const merged = mergePartners(a, b, picks);
-        merged.id = winnerId;
-
-        await dbPutSafe("partners", merged, winnerId);
-        // re-link references before deleting loser
-        await relinkPartnerReferences(winnerId, loserId);
-        await dbDeleteSafe("partners", loserId);
-
-        // Clear selection and repaint once
-        try { window.Selection?.clear?.(); } catch(_) {}
+    openMergeModal({
+      kind: "partners",
+      recordA: a,
+      recordB: b,
+      onConfirm: async (picks) => {
         try {
-          const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge-partners" }});
-          window.dispatchEvent(evt);
-        } catch(_) {}
-        try { window.dispatchAppDataChanged?.("partners:merge"); } catch(_) {}
-      } catch (err) {
-        console.error("[merge] partners failed", err);
-      }
-    },
-    onCancel: () => {}
+          const winner = pickWinnerPartner(a, b); // "A" or "B"
+          const winnerRec = winner === "A" ? a : b;
+          const loserRec  = winner === "A" ? b : a;
+          const winnerId  = winnerRec.id ?? idA;
+          const loserId   = loserRec.id  ?? idB;
+
+          const merged = mergePartners(a, b, picks);
+          merged.id = winnerId;
+
+          await dbPutSafe("partners", merged, winnerId);
+          await relinkPartnerReferences(winnerId, loserId);
+          await dbDeleteSafe("partners", loserId);
+
+          try { window.Selection?.clear?.(); } catch(_) {}
+          try {
+            const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge-partners" }});
+            window.dispatchEvent(evt);
+          } catch(_) {}
+          try { window.dispatchAppDataChanged?.("partners:merge"); } catch(_) {}
+
+          finish({ status: "ok", winnerId, loserId, merged });
+        } catch (err) {
+          console.error("[merge] partners failed", err);
+          finish({ status: "error", error: err });
+        }
+      },
+      onCancel: () => finish({ status: "cancel" })
+    });
   });
 }
