@@ -128,7 +128,7 @@ export async function openPartnersMergeByIds(idA, idB) {
 
           try { window.Selection?.clear?.(); } catch(_) {}
           try {
-            const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge-partners" }});
+            const evt = new CustomEvent("selection:change", { detail: { clearedBy: "merge-partners" }});
             window.dispatchEvent(evt);
           } catch(_) {}
           try { window.dispatchAppDataChanged?.("partners:merge"); } catch(_) {}
