@@ -66,18 +66,25 @@ export function openMergeModal({ kind = "contacts", recordA, recordB, onConfirm,
   const node = tpl.content.firstElementChild;
   document.body.appendChild(node);
 
-  const close = () => { try { node.remove(); } catch(_){}; window[guard] = false; onCancel?.(); };
+  const cleanup = () => { try { node.remove(); } catch(_){}; window[guard] = false; };
+  const cancel = () => { cleanup(); onCancel?.(); };
 
-  node.querySelector(".merge-close")?.addEventListener("click", close);
-  node.querySelector(".merge-cancel")?.addEventListener("click", close);
-  node.querySelector(".merge-confirm")?.addEventListener("click", () => {
+  node.querySelector(".merge-close")?.addEventListener("click", cancel);
+  node.querySelector(".merge-cancel")?.addEventListener("click", cancel);
+  node.querySelector(".merge-confirm")?.addEventListener("click", async () => {
     const picks = {};
-    document.querySelectorAll('.merge-row').forEach(row => {
+    node.querySelectorAll('.merge-row').forEach(row => {
       const field = row.getAttribute("data-field");
       const inputA = row.querySelector('input[value="A"]');
       const inputB = row.querySelector('input[value="B"]');
       picks[field] = (inputB && inputB.checked) ? "B" : "A";
     });
-    try { onConfirm?.(picks); } finally { close(); }
+    try {
+      await onConfirm?.(picks);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      cleanup();
+    }
   });
 }
