@@ -566,16 +566,7 @@
     const queue = await buildQueue();
     __lastQueue = queue;
     await syncQueueStore(queue);
-    if(typeof window !== 'undefined'){
-      try{ window.__NOTIF_QUEUE__ = queue.slice(); }
-      catch(_){ window.__NOTIF_QUEUE__ = queue; }
-    }
     renderNotificationsList(queue);
-    if(typeof window !== 'undefined' && typeof window.dispatchEvent === 'function'){
-      try{
-        window.dispatchEvent(new CustomEvent('notifications:changed', { detail: { count: queue.length, queue } }));
-      }catch(_){ }
-    }
   }
 
   window.renderNotifications = renderNotifications;
