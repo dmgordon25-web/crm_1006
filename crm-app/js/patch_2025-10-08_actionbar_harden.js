@@ -33,6 +33,11 @@
             const type = payload.type || scope;
             return { ids, type };
           }
+          if (Array.isArray(payload)) {
+            const ids = payload.map(String);
+            const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
+            return { ids, type };
+          }
         }
         if (typeof svc.getIds === "function") {
           const ids = normalizeIds(svc.getIds());
