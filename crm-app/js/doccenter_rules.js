@@ -243,3 +243,286 @@
     schedule(()=> hydrateAllContacts());
   }
 })();
+
+/* P6a: Document Center baseline — canonical specs + renderer + persistence */
+(function(){
+  if (window.__DOC_RULES_V1_LOADED__) return; window.__DOC_RULES_V1_LOADED__ = true;
+
+  // ---- Canonical doc specs by loanType (edit/extend safely later) ----
+  const DOC_SPEC = {
+    Generic: [
+      "1003 Loan Application", "Credit Report", "Photo ID", "2 Most Recent Paystubs",
+      "2 Most Recent Bank Statements", "2 Years W-2s", "2 Years Tax Returns",
+      "Purchase Contract / Refi Statement", "Homeowners Insurance", "Asset Statement",
+      "VOE / Employment Letter", "Disclosures Signed"
+    ],
+    Conventional: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "Paystubs (30 days)", "Bank Statements (2 mo.)", "W-2s (2 yrs)",
+      "Tax Returns (2 yrs if needed)", "Purchase Contract", "Homeowners Insurance",
+      "Appraisal", "Disclosures Signed"
+    ],
+    FHA: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "Paystubs (30 days)", "Bank Statements (2 mo.)", "W-2s (2 yrs)",
+      "Tax Returns (2 yrs if needed)", "CAIVRS Clear", "Purchase Contract",
+      "Homeowners Insurance", "FHA Case Assignment", "Disclosures Signed"
+    ],
+    VA: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "COE (Certificate of Eligibility)", "Paystubs (30 days)", "Bank Statements (2 mo.)",
+      "W-2s (2 yrs)", "Purchase Contract", "Homeowners Insurance", "VA Appraisal",
+      "Disclosures Signed"
+    ],
+    USDA: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "Paystubs (30 days)", "Bank Statements (2 mo.)", "W-2s (2 yrs)",
+      "USDA Eligibility Check", "Purchase Contract", "Homeowners Insurance",
+      "USDA Appraisal", "Disclosures Signed"
+    ],
+    Refi: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "Mortgage Statement", "Homeowners Insurance", "Paystubs (30 days)",
+      "Bank Statements (2 mo.)", "W-2s (2 yrs)", "Appraisal (if needed)",
+      "Disclosures Signed"
+    ],
+    Purchase: [
+      "1003 Loan Application", "Credit Report", "Photo ID",
+      "Paystubs (30 days)", "Bank Statements (2 mo.)", "W-2s (2 yrs)",
+      "Purchase Contract", "Homeowners Insurance", "Appraisal", "Disclosures Signed"
+    ]
+  };
+
+  function canonicalListForLoanType(loanType){
+    if (!loanType) return DOC_SPEC.Generic;
+    const key = String(loanType).trim();
+    return DOC_SPEC[key] || DOC_SPEC.Generic;
+  }
+
+  // ---- Persistence adapter (IDB “documents” store if present; else localStorage) ----
+  const Storage = (function(){
+    const LS_KEY = "documents:v1";
+    let mem = null;
+    function hasIDB(){
+      try {
+        // honor existing app DB facade if present (don’t import or change schema)
+        return !!(window.db && typeof window.db.get === "function" && typeof window.db.put === "function");
+      } catch { return false; }
+    }
+    async function getAllLS(){
+      if (mem) return mem;
+      try { mem = JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+      catch { mem = {}; }
+      return mem;
+    }
+    async function saveLS(){
+      try { localStorage.setItem(LS_KEY, JSON.stringify(mem || {})); } catch {}
+    }
+    return {
+      async read(contactId){
+        if (!contactId) return {};
+        if (hasIDB()){
+          try {
+            // Non-blocking; if store missing, treat as empty.
+            const row = await window.db.get("documents", contactId).catch(()=>null);
+            return row?.items || {};
+          } catch { return {}; }
+        } else {
+          const all = await getAllLS(); return all[contactId] || {};
+        }
+      },
+      async write(contactId, items){
+        if (!contactId) return;
+        if (hasIDB()){
+          try {
+            await window.db.put("documents", { id: contactId, items: items || {} });
+          } catch {
+            // fall through to LS if IDB write fails
+            const all = await getAllLS(); all[contactId] = items || {}; await saveLS();
+          }
+        } else {
+          const all = await getAllLS(); all[contactId] = items || {}; await saveLS();
+        }
+      }
+    };
+  })();
+
+  // ---- Rendering & interactions ----
+  const STATES = ["Requested","Received","Waived"];
+  function nextState(s){ const i = STATES.indexOf(s); return STATES[(i+1) % STATES.length]; }
+
+  function findDocsPaneRoot(){
+    // robust candidates; adjust in later micro-steps if project differs
+    return document.querySelector('[data-view="contact"] [data-pane="docs"]')
+        || document.querySelector('#contact-modal [data-pane="docs"]')
+        || document.querySelector('[data-pane="docs"]');
+  }
+
+  function activeContact(){
+    // Attempt to derive current contact context from app; this should align with existing selection APIs.
+    // Fallbacks: data-contact-id on view root or a globally tracked selection.
+    const root = document.querySelector('[data-view="contact"]') || document.body;
+    const id = root?.getAttribute?.('data-contact-id') || window.__ACTIVE_CONTACT_ID__;
+    return id || null;
+  }
+
+  function activeLoanType(){
+    // Try common locations for loanType (dataset attrs or hidden inputs in the Contact view)
+    const root = document.querySelector('[data-view="contact"]') || document;
+    const el = root.querySelector('[data-loan-type]') || root.querySelector('input[name="loanType"]') || root.querySelector('[data-field="loanType"]');
+    const val = el?.value || el?.textContent || el?.getAttribute?.('data-loan-type');
+    return (val || '').trim() || 'Generic';
+  }
+
+  function countsOf(items){
+    let req=0, rec=0, wvd=0;
+    Object.values(items).forEach(s=>{
+      if (s==="Requested") req++; else if (s==="Received") rec++; else if (s==="Waived") wvd++;
+    });
+    return {req, rec, wvd};
+  }
+
+  async function renderDocs(){
+    const pane = findDocsPaneRoot();
+    if (!pane) return; // quietly no-op if pane not present
+    const cid = activeContact();
+    if (!cid) return;
+
+    // Load existing state, seed with canonical spec
+    const loanType = activeLoanType();
+    const spec = canonicalListForLoanType(loanType);
+    const saved = await Storage.read(cid);
+    // Ensure all spec docs exist; default to Requested
+    const items = { ...Object.fromEntries(spec.map(n=>[n, "Requested"])), ...saved };
+
+    // Build UI (lightweight, JS-injected; no external CSS)
+    // Container
+    let host = pane.querySelector('.doccenter-host');
+    if (!host){
+      host = document.createElement('div');
+      host.className = 'doccenter-host';
+      host.style.padding = '8px 6px';
+      host.style.display = 'grid';
+      host.style.gridTemplateColumns = '1fr';
+      host.style.gap = '6px';
+      pane.prepend(host);
+    } else {
+      host.innerHTML = '';
+    }
+
+    // Totals header
+    const totals = countsOf(items);
+    const header = document.createElement('div');
+    header.className = 'doccenter-header';
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.marginBottom = '4px';
+    header.innerHTML = `
+      <div style="font-weight:600;">Documents — ${loanType}</div>
+      <div data-docs-totals style="font-size:12px;">R: ${totals.req} • Rec: ${totals.rec} • Wvd: ${totals.wvd}</div>
+    `;
+    host.appendChild(header);
+
+    // List
+    const list = document.createElement('div');
+    list.className = 'doccenter-list';
+    list.style.display = 'grid';
+    list.style.gridTemplateColumns = '1fr auto';
+    list.style.rowGap = '4px';
+    list.style.columnGap = '8px';
+    spec.forEach(name=>{
+      const row = document.createElement('div');
+      row.setAttribute('data-doc-row', name);
+      row.style.display = 'contents'; // allow two-column grid per row without extra wrappers
+
+      const label = document.createElement('div');
+      label.textContent = name;
+      label.style.fontSize = '13px';
+      label.style.lineHeight = '22px';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-doc-chip', name);
+      btn.setAttribute('data-state', items[name]);
+      btn.textContent = items[name];
+      btn.style.minWidth = '110px';
+      btn.style.height = '22px';
+      btn.style.fontSize = '12px';
+      btn.style.borderRadius = '12px';
+      btn.style.border = '1px solid #ccc';
+      btn.style.cursor = 'pointer';
+      btn.style.background = '#f7f7f7';
+
+      row.appendChild(label);
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+    host.appendChild(list);
+
+    // Save current render state to memory (for quick updates)
+    host.__DOCS_STATE__ = { cid, items };
+
+    // Delegate chip clicks
+    if (!window.__WIRED_DOCS_CHIPS__){
+      window.__WIRED_DOCS_CHIPS__ = true;
+      document.addEventListener('click', async (e)=>{
+        const chip = e.target?.closest?.('[data-doc-chip]');
+        if (!chip) return;
+        const container = chip.closest?.('.doccenter-host'); if (!container) return;
+        const state = container.__DOCS_STATE__; if (!state) return;
+        const name = chip.getAttribute('data-doc-chip');
+        const curr = chip.getAttribute('data-state') || 'Requested';
+        const next = nextState(curr);
+        state.items[name] = next;
+        chip.setAttribute('data-state', next);
+        chip.textContent = next;
+
+        // Update totals
+        const t = countsOf(state.items);
+        const totalsEl = container.querySelector('[data-docs-totals]');
+        if (totalsEl) totalsEl.textContent = `R: ${t.req} • Rec: ${t.rec} • Wvd: ${t.wvd}`;
+
+        // Persist and notify
+        await Storage.write(state.cid, state.items);
+        window.dispatchAppDataChanged?.("doccenter:toggle");
+      }, true);
+    }
+  }
+
+  // ---- Wiring: when Docs pane becomes active, render (idempotent) ----
+  async function tryRenderIfDocsVisible(){
+    const pane = findDocsPaneRoot();
+    if (!pane) return;
+    // Heuristic: pane is considered active if not aria-hidden and is displayed
+    const visible = pane.offsetParent !== null && !pane.hasAttribute('aria-hidden');
+    if (!visible) return;
+    await renderDocs();
+  }
+
+  if (!window.__WIRED_DOCS__){
+    window.__WIRED_DOCS__ = true;
+
+    // Try on initial paint, then on user navigation. Keep minimal / non-spammy.
+    document.addEventListener('click', (e)=>{
+      // When user clicks the Docs tab, lazy-render
+      const tab = e.target?.closest?.('[data-tab="docs"],[data-nav="docs"],[data-target="docs"]');
+      if (tab) {
+        queueMicrotask(tryRenderIfDocsVisible);
+      }
+    }, true);
+
+    // Re-render when app data changes (e.g., loanType changed)
+    window.addEventListener('app:data:changed', (e)=> {
+      // only re-render if we're on a contact view and docs are visible
+      queueMicrotask(tryRenderIfDocsVisible);
+    });
+
+    // First attempt after boot (harmless if pane absent)
+    requestAnimationFrame(()=>requestAnimationFrame(tryRenderIfDocsVisible));
+  }
+
+  // Public helpers (non-breaking)
+  window.DocCenter = window.DocCenter || {};
+  window.DocCenter.getSpecFor = canonicalListForLoanType;
+})();
