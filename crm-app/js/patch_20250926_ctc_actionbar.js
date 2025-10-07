@@ -961,7 +961,8 @@ import { openContactsMergeByIds } from '/js/contacts_merge_orchestrator.js';
         const ids = snap.ids.slice(0,2).map(id => String(id));
         const route = currentView();
         if(route !== 'contacts'){
-          console.info('[merge] proceeding with contacts merge outside contacts view', { route, ids });
+          console.warn('[merge] ignored merge outside contacts view', { route, ids });
+          return { status:'cancel', dispatch:false };
         }
         const mergeFn = typeof window.mergeContactsWithIds === 'function'
           ? window.mergeContactsWithIds

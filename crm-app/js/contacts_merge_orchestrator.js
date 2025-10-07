@@ -34,28 +34,6 @@ async function dbPutSafe(store, value, key) {
   throw new Error("dbPut not available");
 }
 
-async function dbBulkPutSafe(store, list = []) {
-  if (typeof window.dbBulkPut === "function") return window.dbBulkPut(store, list);
-  if (typeof window.withStore === "function" && typeof window.openDB === "function") {
-    const items = Array.isArray(list) ? list : [];
-    return window.withStore(store, "readwrite", (st) => new Promise((resolve, reject) => {
-      if (!items.length) { resolve(true); return; }
-      let index = 0;
-      const next = () => {
-        if (index >= items.length) { resolve(true); return; }
-        const entry = items[index++];
-        try {
-          const req = st.put(entry);
-          req.onsuccess = next;
-          req.onerror = (e) => reject(e);
-        } catch (err) { reject(err); }
-      };
-      next();
-    }));
-  }
-  throw new Error("dbBulkPut not available");
-}
-
 async function dbDeleteSafe(store, key) {
   if (typeof window.dbDelete === "function") return window.dbDelete(store, key);
   if (typeof window.withStore === "function" && typeof window.openDB === "function") {
@@ -72,57 +50,6 @@ async function dbDeleteSafe(store, key) {
   // Soft fallback: do nothing (not ideal but avoids crash)
   console.warn("[merge] dbDelete not available; loser not deleted");
   return false;
-}
-
-async function dbGetAllSafe(store) {
-  if (typeof window.dbGetAll === "function") return window.dbGetAll(store);
-  if (typeof window.withStore === "function" && typeof window.openDB === "function") {
-    return window.withStore(store, "readonly", (st) => new Promise((resolve, reject) => {
-      try {
-        const req = st.getAll();
-        req.onsuccess = () => {
-          const list = Array.isArray(req.result) ? req.result : [];
-          resolve(list);
-        };
-        req.onerror = (e) => reject(e);
-      } catch (err) { reject(err); }
-    }));
-  }
-  throw new Error("dbGetAll not available");
-}
-
-function normalizeId(value) {
-  return value == null ? "" : String(value);
-}
-
-async function reassignDependentRecords(winnerId, loserId) {
-  const outcome = { tasks: 0, documents: 0 };
-  const winnerKey = normalizeId(winnerId);
-  const loserKey = normalizeId(loserId);
-  if (!winnerKey || !loserKey || winnerKey === loserKey) return outcome;
-  try {
-    const [tasks, docs] = await Promise.all([
-      dbGetAllSafe("tasks").catch(() => []),
-      dbGetAllSafe("documents").catch(() => [])
-    ]);
-    const now = Date.now();
-    const rewrite = (rows) => rows
-      .filter(row => normalizeId(row?.contactId) === loserKey)
-      .map(row => Object.assign({}, row, { contactId: winnerKey, updatedAt: now }));
-    const taskUpdates = rewrite(Array.isArray(tasks) ? tasks : []);
-    const docUpdates = rewrite(Array.isArray(docs) ? docs : []);
-    if (taskUpdates.length) {
-      await dbBulkPutSafe("tasks", taskUpdates);
-      outcome.tasks = taskUpdates.length;
-    }
-    if (docUpdates.length) {
-      await dbBulkPutSafe("documents", docUpdates);
-      outcome.documents = docUpdates.length;
-    }
-  } catch (err) {
-    console.warn("[merge] failed to reassign dependent records", err);
-  }
-  return outcome;
 }
 
 export async function openContactsMergeByIds(idA, idB) {
@@ -157,26 +84,17 @@ export async function openContactsMergeByIds(idA, idB) {
           merged.id = winnerId;
 
           await dbPutSafe("contacts", merged, winnerId);
-          const rewired = await reassignDependentRecords(winnerId, loserId);
           await dbDeleteSafe("contacts", loserId);
 
           // Clear selection and repaint once
-          try {
-            if (typeof window.Selection?.clear === "function") window.Selection.clear("merge");
-          } catch (_) {}
-          try {
-            if (typeof window.SelectionService?.clear === "function") window.SelectionService.clear("merge");
-          } catch (_) {}
+          try { window.Selection?.clear?.(); } catch(_) {}
           try {
             const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge" }});
             window.dispatchEvent(evt);
-          } catch (_) {}
-          try {
-            const detail = { source: "contacts:merge", winnerId, loserId, rewired };
-            window.dispatchAppDataChanged?.(detail);
-          } catch (_) {}
+          } catch(_) {}
+          try { window.dispatchAppDataChanged?.("contacts:merge"); } catch(_) {}
 
-          finish({ status: "ok", winnerId, loserId, merged, rewired });
+          finish({ status: "ok", winnerId, loserId, merged });
         } catch (err) {
           console.error("[merge] failed", err);
           finish({ status: "error", error: err });
