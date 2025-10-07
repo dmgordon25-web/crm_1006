@@ -1219,5 +1219,7 @@ export const __esModule = true;
     };
   }
 
-  window.mergeContactsWithIds = mergeContactsWithIds;
+  if(!window.mergeContactsWithIds || !window.mergeContactsWithIds.__fieldChooser){
+    window.mergeContactsWithIds = mergeContactsWithIds;
+  }
 })();
