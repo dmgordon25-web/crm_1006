@@ -1,6 +1,9 @@
 import { STR, text } from './ui/strings.js';
 import { safeMax, normalizePhone, normalizeEmail } from './util/strings.js';
 import { stageKeyFromLabel } from './pipeline/stages.js';
+import './importer_helpers.js';
+import './importer_partners.js';
+import './importer_contacts.js';
 
 const CLAMP_LIMITS = Object.freeze({ name: 120, company: 120, address: 200, notes: 10000 });
 
@@ -254,7 +257,7 @@ export const IMPORTER_INTERNALS = {
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 (function(){
-  const NONE_PARTNER_ID = window.NONE_PARTNER_ID || '00000000-0000-none-partner-000000000000';
+  const NONE_PARTNER_ID = (window.IMPORT_HELPERS && window.IMPORT_HELPERS.NONE_PARTNER_ID) || window.NONE_PARTNER_ID || '00000000-0000-none-partner-000000000000';
 
   async function loadDefaultMapping(kind){
     const settings = await dbGetAll('settings');
@@ -312,6 +315,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
 
   async function ensureNonePartner(){
+    if (window.IMPORT_HELPERS && typeof window.IMPORT_HELPERS.ensureNonePartner === 'function') {
+      await window.IMPORT_HELPERS.ensureNonePartner();
+      return;
+    }
     const partners = await dbGetAll('partners');
     if(!partners.find(p => p.id === NONE_PARTNER_ID || lc(p.name)==='none')){
       await dbPut('partners', { id: NONE_PARTNER_ID, name:'None', company:'', email:'', phone:'', tier:'Keep in Touch' });
@@ -688,3 +695,49 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
 })();
 }
+
+/* P6d: import orchestrator v5 */
+(function(){
+  if (window.__IMPORT_ORCH_V5__) return; window.__IMPORT_ORCH_V5__ = true;
+
+  async function runImportV5({ partnersRows = [], contactsRows = [] }){
+    const audit = { orphans: [] };
+    const partnersApi = window.ImportPartnersV5;
+    const contactsApi = window.ImportContactsV5;
+    if (!partnersApi?.upsertPartner || !contactsApi?.upsertContact) {
+      throw new Error('Import V5 dependencies unavailable');
+    }
+    // Partners first
+    for (const r of partnersRows) await partnersApi.upsertPartner(r, audit);
+
+    // Contacts second
+    for (const r of contactsRows){
+      // if explicit partnerId fields refer to unknown ids, log orphan
+      if (r.buyerPartnerId){
+        const buyer = typeof window.dbGet === 'function'
+          ? await window.dbGet('partners', r.buyerPartnerId)
+          : await window.db?.get?.('partners', r.buyerPartnerId);
+        if (!buyer) audit.orphans.push({ type:'buyerPartnerId', contact:r });
+      }
+      if (r.listingPartnerId){
+        const listing = typeof window.dbGet === 'function'
+          ? await window.dbGet('partners', r.listingPartnerId)
+          : await window.db?.get?.('partners', r.listingPartnerId);
+        if (!listing) audit.orphans.push({ type:'listingPartnerId', contact:r });
+      }
+      await contactsApi.upsertContact(r, audit);
+    }
+
+    window.dispatchAppDataChanged?.("import:v5:complete");
+    return audit;
+  }
+
+  function downloadAudit(audit){
+    if (!audit || !audit.orphans?.length) return;
+    const blob = new Blob([JSON.stringify(audit,null,2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=`import_audit_${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  window.ImportV5 = { runImportV5, downloadAudit };
+})();
