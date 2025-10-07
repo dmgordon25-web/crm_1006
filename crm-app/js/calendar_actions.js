@@ -3,10 +3,18 @@
   if (window.__WIRED_ICS__) return; window.__WIRED_ICS__ = true;
 
   function currentSelection(){
-    // Project-specific: try selection service or data- attrs in Calendar view
-    if (window.selectionService?.get?.("calendar")) return window.selectionService.get("calendar");
-    const rows = Array.from(document.querySelectorAll('[data-view="calendar"] [data-event][aria-selected="true"]'));
-    return rows.map(r=>r.getAttribute("data-event-id")).filter(Boolean);
+    // Prefer the selection service when available
+    if (window.selectionService && typeof window.selectionService.get === "function"){
+      const sel = window.selectionService.get("calendar");
+      // sel might be an object { ids, type } — normalize to string[] of ids
+      const ids = Array.isArray(sel) ? sel : (Array.isArray(sel?.ids) ? sel.ids : []);
+      if (ids.length) return ids;
+    }
+    // Fallback: selected rows in Calendar view
+    const rows = Array.from(document.querySelectorAll(
+      '[data-view="calendar"] [data-event][aria-selected="true"]'
+    ));
+    return rows.map(r => r.getAttribute("data-event-id")).filter(Boolean);
   }
 
   async function fetchEvents(ids){
