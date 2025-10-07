@@ -18,6 +18,30 @@
   const KEY_TO_LABEL = new Map();
   const STAGE_ALIASES = new Map();
 
+  const canonicalStageKeyFromLabel = typeof window.stageKeyFromLabel === 'function'
+    ? (value)=> {
+      try {
+        return window.stageKeyFromLabel(value);
+      } catch { return null; }
+    }
+    : null;
+
+  const canonicalizeStageKey = typeof window.canonicalizeStage === 'function'
+    ? (value)=> {
+      try {
+        return window.canonicalizeStage(value);
+      } catch { return null; }
+    }
+    : null;
+
+  const canonicalStageLabelFromKey = typeof window.stageLabelFromKey === 'function'
+    ? (value)=> {
+      try {
+        return window.stageLabelFromKey(value);
+      } catch { return null; }
+    }
+    : null;
+
   function registerStageAlias(alias, key){
     const raw = String(alias ?? '').trim();
     if (!raw) return;
@@ -40,6 +64,17 @@
   function normalizeStageKey(value){
     const raw = String(value ?? '').trim();
     if (!raw) return DEFAULT_STAGE_KEY;
+
+    if (canonicalStageKeyFromLabel){
+      const canonical = canonicalStageKeyFromLabel(raw);
+      if (canonical && KEY_TO_LABEL.has(canonical)) return canonical;
+    }
+
+    if (canonicalizeStageKey){
+      const canonical = canonicalizeStageKey(raw);
+      if (canonical && KEY_TO_LABEL.has(canonical)) return canonical;
+    }
+
     const lowered = raw.toLowerCase();
     if (STAGE_ALIASES.has(lowered)) return STAGE_ALIASES.get(lowered);
     const squished = lowered.replace(/[^a-z0-9]+/g, '');
@@ -51,6 +86,10 @@
 
   function stageLabelFromKey(value){
     const key = normalizeStageKey(value);
+    if (canonicalStageLabelFromKey){
+      const label = canonicalStageLabelFromKey(key);
+      if (label) return label;
+    }
     return KEY_TO_LABEL.get(key) || KEY_TO_LABEL.get(DEFAULT_STAGE_KEY) || STAGE_ITEMS[0].label;
   }
 
