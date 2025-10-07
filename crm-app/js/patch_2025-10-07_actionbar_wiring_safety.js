@@ -9,13 +9,9 @@
     try {
       const svc = window.SelectionService || window.Selection;
       if (svc) {
-        if (typeof svc.get === "function") {
-          const payload = svc.get(scope);
-          if (Array.isArray(payload?.ids)) {
-            return { ids: payload.ids.slice(), type: payload.type || scope };
-          }
-        }
         let ids;
+        let type = scope;
+
         if (typeof svc.getIds === "function") {
           const result = svc.getIds();
           if (Array.isArray(result)) ids = result.slice();
@@ -23,8 +19,19 @@
         } else if (svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
           ids = Array.from(svc.ids);
         }
+
+        if (!Array.isArray(ids) && typeof svc.get === "function") {
+          const payload = svc.get(scope);
+          if (Array.isArray(payload?.ids)) {
+            ids = payload.ids.slice();
+            if (typeof payload.type === "string" && payload.type) type = payload.type;
+          } else if (Array.isArray(payload)) {
+            ids = payload.slice();
+          }
+        }
+
         if (Array.isArray(ids)) {
-          const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
+          if (typeof svc.type === "string" && svc.type) type = svc.type;
           return { ids, type };
         }
       }
