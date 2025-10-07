@@ -70,6 +70,7 @@ export const PATCHES = [
   "/js/patch_2025-10-03_automation_seed.js",
   "/js/patch_2025-10-07_wire_diag_and_stage_tracker.js",
   "/js/patch_2025-10-07_actionbar_wiring_safety.js",
+  "/js/patch_2025-10-07_dashboard_initial_refresh.js",
 ];
 
 export default {
