@@ -5,28 +5,32 @@
   const DEBUG = !!(window.__ENV__?.DEBUG);
 
   function getSelection() {
-    const scope = document.body?.getAttribute?.("data-scope") || "contacts";
+    const scope = document.body.getAttribute("data-scope") || "contacts";
     try {
-      const svc = window.SelectionService || window.selectionService;
-      if (!svc) return { ids: [], type: scope };
-
-      if (typeof svc.snapshot === "function") {
-        const snap = svc.snapshot();
-        if (Array.isArray(snap?.ids)) {
-          return { ids: snap.ids.map(String), type: snap.type || scope };
+      const svc = window.SelectionService || window.Selection;
+      if (svc) {
+        if (typeof svc.get === "function") {
+          const payload = svc.get(scope);
+          if (Array.isArray(payload?.ids)) {
+            return { ids: payload.ids.slice(), type: payload.type || scope };
+          }
+        }
+        let ids;
+        if (typeof svc.getIds === "function") {
+          const result = svc.getIds();
+          if (Array.isArray(result)) ids = result.slice();
+          else if (result && typeof result[Symbol.iterator] === "function") ids = Array.from(result);
+        } else if (svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
+          ids = Array.from(svc.ids);
+        }
+        if (Array.isArray(ids)) {
+          const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
+          return { ids, type };
         }
       }
-
-      const rawIds = typeof svc.getIds === "function"
-        ? svc.getIds()
-        : (Array.isArray(svc.ids) ? svc.ids : svc.ids && typeof svc.ids.values === "function" ? Array.from(svc.ids.values()) : []);
-
-      const ids = Array.isArray(rawIds) ? rawIds : (rawIds && typeof rawIds[Symbol.iterator] === "function" ? Array.from(rawIds) : []);
-      if (ids.length) {
-        const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
-        return { ids: ids.map(String), type };
-      }
-    } catch {}
+    } catch (err) {
+      if (DEBUG) console.warn("[actionbar] selection read failed", err);
+    }
     return { ids: [], type: scope };
   }
 
