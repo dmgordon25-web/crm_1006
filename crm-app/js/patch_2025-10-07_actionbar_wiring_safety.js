@@ -7,10 +7,37 @@
   function getSelection() {
     const scope = document.body.getAttribute("data-scope") || "contacts";
     try {
-      const svc = window.SelectionService || window.Selection;
+      const svc =
+        window.SelectionService ||
+        window.selectionService ||
+        window.Selection;
       if (svc) {
         let ids;
         let type = scope;
+
+        const assignFromPayload = (payload) => {
+          if (!payload) return false;
+          if (Array.isArray(payload)) {
+            ids = payload.slice();
+            return true;
+          }
+          if (Array.isArray(payload.ids)) {
+            ids = payload.ids.slice();
+            if (typeof payload.type === "string" && payload.type) type = payload.type;
+            return true;
+          }
+          if (Array.isArray(payload.selection?.ids)) {
+            ids = payload.selection.ids.slice();
+            const payloadType = payload.selection.type || payload.type;
+            if (typeof payloadType === "string" && payloadType) type = payloadType;
+            return true;
+          }
+          return false;
+        };
+
+        if (typeof svc.snapshot === "function") {
+          assignFromPayload(svc.snapshot());
+        }
 
         if (typeof svc.getIds === "function") {
           const result = svc.getIds();
@@ -21,13 +48,7 @@
         }
 
         if (!Array.isArray(ids) && typeof svc.get === "function") {
-          const payload = svc.get(scope);
-          if (Array.isArray(payload?.ids)) {
-            ids = payload.ids.slice();
-            if (typeof payload.type === "string" && payload.type) type = payload.type;
-          } else if (Array.isArray(payload)) {
-            ids = payload.slice();
-          }
+          assignFromPayload(svc.get(scope));
         }
 
         if (Array.isArray(ids)) {
