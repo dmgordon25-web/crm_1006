@@ -47,27 +47,36 @@
     // 1) diagnostics_quiet: enable in prod only (skip in dev so you still see logs)
     if (!DEBUG && !window.__DIAGNOSTICS_QUIET_ACTIVE__) {
       const dq = await safeImport("/js/diagnostics_quiet.js");
+      let enabled = false;
       try {
-        if (dq?.enableQuiet) dq.enableQuiet();
-        else if (typeof dq?.default === "function") dq.default();
-        else if (typeof window.DIAGNOSTICS_QUIET?.enable === "function") window.DIAGNOSTICS_QUIET.enable();
-        window.__DIAGNOSTICS_QUIET_ACTIVE__ = true;
-        if (window.__ENV__?.DEBUG) console.log("[wire] diagnostics_quiet enabled");
+        if (dq?.enableQuiet) { dq.enableQuiet(); enabled = true; }
+        else if (typeof dq?.default === "function") { dq.default(); enabled = true; }
+        else if (typeof window.DIAGNOSTICS_QUIET?.enable === "function") { window.DIAGNOSTICS_QUIET.enable(); enabled = true; }
       } catch (e) {
         if (window.__ENV__?.DEBUG) console.warn("[wire] diagnostics_quiet error (non-fatal)", e);
+      }
+      if (enabled) {
+        window.__DIAGNOSTICS_QUIET_ACTIVE__ = true;
+        if (window.__ENV__?.DEBUG) console.log("[wire] diagnostics_quiet enabled");
       }
     }
 
     // 2) contact_stage_tracker: wire into Contacts UI
     if (!window.__CONTACT_STAGE_TRACKER_WIRED__) {
       const cst = await safeImport("/js/contact_stage_tracker.js");
+      let wired = false;
       try {
+        const target = window.App || window;
         // Preferred modern export
-        if (cst?.wire) cst.wire(window.App || window);
-        else if (typeof cst?.default === "function") cst.default(window.App || window);
+        if (cst?.wire) { cst.wire(target); wired = true; }
+        else if (typeof cst?.default === "function") { cst.default(target); wired = true; }
         // Legacy global adapter (if the module exposes a global hook)
-        else if (window.ContactStageTracker?.wire) window.ContactStageTracker.wire(window.App || window);
+        else if (window.ContactStageTracker?.wire) { window.ContactStageTracker.wire(target); wired = true; }
+      } catch (e) {
+        if (window.__ENV__?.DEBUG) console.warn("[wire] contact_stage_tracker error (non-fatal)", e);
+      }
 
+      if (wired) {
         window.__CONTACT_STAGE_TRACKER_WIRED__ = true;
 
         // Optional: if the tracker exposes a small sanity check, call it safely
@@ -77,8 +86,6 @@
 
         // Log in dev only
         if (window.__ENV__?.DEBUG) console.log("[wire] contact_stage_tracker wired");
-      } catch (e) {
-        if (window.__ENV__?.DEBUG) console.warn("[wire] contact_stage_tracker error (non-fatal)", e);
       }
     }
   });
