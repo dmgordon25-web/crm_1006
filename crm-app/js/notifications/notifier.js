@@ -51,6 +51,13 @@ const Notifier = (function() {
       queue.push(n);
       emit(); return true;
     },
+    replace(list) {
+      const next = Array.isArray(list) ? list.map(normalizeItem).filter(Boolean) : [];
+      queue.length = 0;
+      Array.prototype.push.apply(queue, next);
+      emit();
+      return queue.length;
+    },
     remove(id) {
       if (!id) return false;
       const before = queue.length;
@@ -77,6 +84,7 @@ window.Notifier = window.Notifier || Notifier;
 export const getNotificationsCount = () => Notifier.getCount();
 export const listNotifications       = () => Notifier.list();
 export const pushNotification        = (item) => Notifier.push(item);
+export const replaceNotifications    = (list) => Notifier.replace(list);
 export const removeNotification      = (id) => Notifier.remove(id);
 export const clearNotifications      = () => Notifier.clear();
 export const onNotificationsChanged  = (h) => Notifier.onChanged(h);

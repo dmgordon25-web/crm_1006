@@ -15,6 +15,55 @@
   };
   const UPCOMING_WINDOW_DAYS = 30;
 
+  function toNotifierItems(queue){
+    const now = Date.now();
+    return (queue||[]).map(item => {
+      if(!item) return null;
+      const label = TYPE_LABELS[item.type] || item.type || 'Notification';
+      const subject = (item.subject || '').trim();
+      const name = (item.name || '').trim();
+      const baseTitle = subject || (label + (name ? `: ${name}` : ''));
+      const due = item.meta?.due || item.due || item.meta?.fundedDate || '';
+      let ts = now;
+      if(due){
+        const dt = new Date(due);
+        if(!Number.isNaN(dt.getTime())) ts = dt.getTime();
+      }else if(item.meta?.daysOut){
+        const offset = Number(item.meta.daysOut);
+        if(Number.isFinite(offset)) ts = now + offset*ONE_DAY;
+      }
+      return {
+        id: item.id || buildId(item.type || 'notification', item.contactId || ''),
+        ts,
+        type: label,
+        title: baseTitle || label,
+        meta: {
+          contactId: item.contactId,
+          channel: item.channel,
+          due,
+          queue: item
+        }
+      };
+    }).filter(Boolean);
+  }
+
+  function updateNotifier(queue){
+    const notifierItems = toNotifierItems(queue);
+    try{
+      const notifier = window.Notifier;
+      if(notifier && typeof notifier.replace === 'function'){
+        notifier.replace(notifierItems);
+        return;
+      }
+    }catch(_){ }
+    if(typeof window !== 'undefined'){
+      try{ window.__NOTIF_QUEUE__ = notifierItems.slice(); }
+      catch(_){ window.__NOTIF_QUEUE__ = notifierItems; }
+      try{ window.localStorage?.setItem('notifications:queue', JSON.stringify(notifierItems)); }catch(_){ }
+      try{ window.dispatchEvent(new CustomEvent('notifications:changed')); }catch(_){ }
+    }
+  }
+
   function pad(n){ return (n<10?'0':'')+n; }
   function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
   function mmdd(d){ const x=new Date(d); return `${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
@@ -566,6 +615,7 @@
     const queue = await buildQueue();
     __lastQueue = queue;
     await syncQueueStore(queue);
+    updateNotifier(queue);
     renderNotificationsList(queue);
   }
 
