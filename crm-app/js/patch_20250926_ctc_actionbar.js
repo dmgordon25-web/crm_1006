@@ -1,5 +1,6 @@
 // patch_20250926_ctc_actionbar.js — stage canonicalization + hardened action bar
 import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
+import { openContactsMergeByIds } from '/js/contacts_merge_orchestrator.js';
 
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
@@ -243,6 +244,134 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
 
   let SelectionService = window.SelectionService;
 
+  function legacySelectionGetIds(obj){
+    if(!obj) return [];
+    try{
+      if(typeof obj.getSelectedIds === 'function'){
+        const ids = obj.getSelectedIds();
+        if(Array.isArray(ids)) return ids.map(String);
+        if(ids instanceof Set) return Array.from(ids).map(String);
+      }
+      if(typeof obj.get === 'function'){
+        const snap = obj.get();
+        if(snap && Array.isArray(snap.ids)) return snap.ids.map(String);
+      }
+      if(Array.isArray(obj.ids)) return obj.ids.map(String);
+      if(obj.ids instanceof Set) return Array.from(obj.ids).map(String);
+      if(obj.ids && typeof obj.ids.size === 'number' && typeof obj.ids.values === 'function'){
+        return Array.from(obj.ids.values()).map(String);
+      }
+    }catch(_err){}
+    return [];
+  }
+
+  function isLegacySelection(obj){
+    if(!obj || typeof obj !== 'object') return false;
+    return typeof obj.add === 'function'
+      || typeof obj.remove === 'function'
+      || typeof obj.toggle === 'function'
+      || typeof obj.clear === 'function'
+      || typeof obj.get === 'function'
+      || typeof obj.set === 'function';
+  }
+
+  function adaptLegacySelection(legacy){
+    if(!isLegacySelection(legacy)) return null;
+    const adapter = {
+      add(id, type){
+        if(typeof legacy.add === 'function') legacy.add(id, type);
+        else if(typeof legacy.toggle === 'function') legacy.toggle(id, type);
+      },
+      remove(id){
+        if(typeof legacy.remove === 'function') legacy.remove(id);
+        else if(typeof legacy.del === 'function') legacy.del(id);
+        else if(typeof legacy.toggle === 'function') legacy.toggle(id);
+      },
+      clear(source){
+        if(typeof legacy.clear === 'function') legacy.clear(source);
+      },
+      count(){
+        if(typeof legacy.count === 'function') return legacy.count();
+        return legacySelectionGetIds(legacy).length;
+      },
+      getIds(){
+        return legacySelectionGetIds(legacy);
+      },
+      idsOf(type){
+        if(typeof legacy.idsOf === 'function') return legacy.idsOf(type);
+        const ids = legacySelectionGetIds(legacy);
+        if(!type) return ids;
+        return ids;
+      },
+      syncChecks(){
+        if(typeof legacy.syncChecks === 'function') legacy.syncChecks();
+        else if(typeof legacy.syncCheckboxes === 'function') legacy.syncCheckboxes();
+      },
+      set(ids, type, source){
+        if(typeof legacy.set === 'function') legacy.set(ids, type, source);
+      },
+      prune(ids, source){
+        if(typeof legacy.prune === 'function') return legacy.prune(ids, source);
+        let changed = false;
+        const list = Array.isArray(ids) ? ids : [];
+        list.forEach(id => {
+          const before = this.count();
+          this.remove(id);
+          if(this.count() !== before) changed = true;
+        });
+        return changed;
+      },
+      toggle(id, type){
+        if(typeof legacy.toggle === 'function') legacy.toggle(id, type);
+        else if(typeof legacy.add === 'function'){
+          const key = String(id);
+          const ids = this.getIds();
+          if(ids.includes(key)) this.remove(key);
+          else this.add(key, type);
+        }
+      },
+      snapshot(){
+        if(typeof legacy.snapshot === 'function') return legacy.snapshot();
+        const data = typeof legacy.get === 'function' ? legacy.get() : null;
+        return {
+          ids: legacySelectionGetIds(legacy),
+          type: data && data.type ? data.type : (typeof legacy.type === 'string' ? legacy.type : 'contacts')
+        };
+      },
+      restore(snap, source){
+        if(typeof legacy.restore === 'function') return legacy.restore(snap, source);
+        if(typeof legacy.set === 'function') return legacy.set(snap && snap.ids ? snap.ids : [], snap && snap.type ? snap.type : undefined, source);
+      },
+      reemit(detail){
+        if(typeof legacy.reemit === 'function') return legacy.reemit(detail);
+      }
+    };
+    Object.defineProperty(adapter, 'type', {
+      get(){
+        if(typeof legacy.type === 'string') return legacy.type;
+        const data = typeof legacy.get === 'function' ? legacy.get() : null;
+        return data && data.type ? data.type : 'contacts';
+      },
+      set(value){
+        if(legacy && typeof legacy.type !== 'undefined') legacy.type = value;
+      }
+    });
+    Object.defineProperty(adapter, 'ids', {
+      get(){
+        if(legacy && legacy.ids instanceof Set) return legacy.ids;
+        return new Set(legacySelectionGetIds(legacy));
+      }
+    });
+    Object.defineProperty(adapter, 'items', {
+      get(){
+        if(legacy && legacy.items instanceof Map) return legacy.items;
+        const type = adapter.type;
+        return new Map(legacySelectionGetIds(legacy).map(id => [id, { type }]));
+      }
+    });
+    return adapter;
+  }
+
   function isSelectionService(obj){
     if(!obj || typeof obj !== 'object') return false;
     return typeof obj.add === 'function'
@@ -257,6 +386,22 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
     if(isSelectionService(window.SelectionService)){
       SelectionService = window.SelectionService;
       return true;
+    }
+    if(window.SelectionService && isLegacySelection(window.SelectionService)){
+      const adapted = adaptLegacySelection(window.SelectionService);
+      if(adapted){
+        SelectionService = adapted;
+        window.SelectionService = adapted;
+        return true;
+      }
+    }
+    if(isLegacySelection(window.Selection)){
+      const adapted = adaptLegacySelection(window.Selection);
+      if(adapted){
+        SelectionService = adapted;
+        window.SelectionService = adapted;
+        return true;
+      }
     }
     return false;
   }
@@ -280,6 +425,36 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
   let selectionLockWait = false;
   const pendingActions = new Map();
   const actionState = { busy:false, current:null };
+
+  function currentView(){
+    if(typeof window.__ROUTE__ === 'string' && window.__ROUTE__){
+      return window.__ROUTE__;
+    }
+    try{
+      const activeMain = document.querySelector('main[id^="view-"]:not(.hidden)');
+      if(activeMain && typeof activeMain.id === 'string'){
+        return activeMain.id.replace(/^view-/, '') || 'dashboard';
+      }
+    }catch(_err){}
+    try{
+      const activeNav = document.querySelector('#main-nav button[data-nav].active');
+      if(activeNav){
+        const navTarget = activeNav.getAttribute('data-nav');
+        if(navTarget) return navTarget;
+      }
+    }catch(_err){}
+    try{
+      const hash = typeof window.location?.hash === 'string' ? window.location.hash : (typeof location?.hash === 'string' ? location.hash : '');
+      if(hash){
+        const cleaned = hash.replace(/^#/, '').replace(/^\//, '');
+        if(cleaned){
+          const segment = cleaned.split('/')[0];
+          if(segment) return segment;
+        }
+      }
+    }catch(_err){}
+    return 'dashboard';
+  }
 
   function queueSelectionTick(){
     if(selectionTickScheduled) return;
@@ -781,20 +956,31 @@ import { setDisabled } from './patch_2025-10-02_baseline_ux_cleanup.js';
         return { status:'error', error:'renderContactModal missing', dispatch:false };
       }
       case 'merge':{
-        if(snap.type !== 'contacts'){ toast('Merge supports contacts only'); return { status:'cancel', dispatch:false }; }
+        if(snap.type === 'partners'){ toast('Merge supports contacts only'); return { status:'cancel', dispatch:false }; }
         if(snap.ids.length !== 2){ toast('Select exactly two contacts to merge'); return { status:'cancel', dispatch:false }; }
-        if(typeof window.mergeContactsWithIds === 'function'){
-          try{
-            await window.mergeContactsWithIds(snap.ids.slice(0,2));
-            return { status:'ok', clear:true, dispatch:false, detail:{ merged: snap.ids.slice(0,2) } };
-          }catch(err){
-            console.error('mergeContactsWithIds', err);
-            toast('Merge failed');
-            return { status:'error', error: err, dispatch:false };
-          }
+        const ids = snap.ids.slice(0,2).map(id => String(id));
+        const route = currentView();
+        if(route !== 'contacts'){
+          console.info('[merge] proceeding with contacts merge outside contacts view', { route, ids });
         }
-        warnMissing('mergeContactsWithIds');
-        return { status:'error', error:'mergeContactsWithIds missing', dispatch:false };
+        const mergeFn = typeof window.mergeContactsWithIds === 'function'
+          ? window.mergeContactsWithIds
+          : async (pair) => openContactsMergeByIds(pair[0], pair[1]);
+        try{
+          const result = await mergeFn(ids);
+          if(result && result.status === 'cancel'){
+            return { status:'cancel', dispatch:false };
+          }
+          if(result && result.status === 'error'){
+            toast('Merge failed');
+            return { status:'error', error: result.error || new Error('merge failed'), dispatch:false };
+          }
+          return { status:'ok', clear:true, dispatch:false, detail:{ merged: ids } };
+        }catch(err){
+          console.error('mergeContactsWithIds', err);
+          toast('Merge failed');
+          return { status:'error', error: err, dispatch:false };
+        }
       }
       case 'emailTogether':{
         const data = await ensureSelectionDetail();
