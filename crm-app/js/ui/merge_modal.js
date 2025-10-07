@@ -74,7 +74,20 @@ export function openMergeModal({ kind = "contacts", recordA, recordB, onConfirm,
 
   node.querySelector(".merge-close")?.addEventListener("click", () => close({ triggerCancel: true }));
   node.querySelector(".merge-cancel")?.addEventListener("click", () => close({ triggerCancel: true }));
-  node.querySelector(".merge-confirm")?.addEventListener("click", async () => {
+
+  const confirmButton = node.querySelector(".merge-confirm");
+  let submitting = false;
+  const setSubmitting = state => {
+    submitting = state;
+    if (!confirmButton) return;
+    confirmButton.disabled = state;
+    confirmButton.style.opacity = state ? "0.7" : "";
+    confirmButton.style.cursor = state ? "default" : "pointer";
+  };
+
+  confirmButton?.addEventListener("click", async () => {
+    if (submitting) return;
+    setSubmitting(true);
     const picks = {};
     node.querySelectorAll('.merge-row').forEach(row => {
       const field = row.getAttribute("data-field");
@@ -87,6 +100,7 @@ export function openMergeModal({ kind = "contacts", recordA, recordB, onConfirm,
     } catch (err) {
       console.error(err);
     } finally {
+      setSubmitting(false);
       close();
     }
   });
