@@ -181,6 +181,26 @@ export async function openContactsMergeByIds(idA, idB) {
         console.error("[merge] failed", err);
         finish({ status: "error", error: err });
       }
+          const merged = mergeContacts(a, b, picks);
+          // Preserve primary key of winner
+          merged.id = winnerId;
+
+          await dbPutSafe("contacts", merged, winnerId);
+          await dbDeleteSafe("contacts", loserId);
+
+          // Clear selection and repaint once
+          try { window.Selection?.clear?.(); } catch(_) {}
+          try {
+            const evt = new CustomEvent("selection:changed", { detail: { clearedBy: "merge" }});
+            window.dispatchEvent(evt);
+          } catch(_) {}
+          try { window.dispatchAppDataChanged?.("contacts:merge"); } catch(_) {}
+
+          finish({ status: "ok", winnerId, loserId, merged });
+        } catch (err) {
+          console.error("[merge] failed", err);
+          finish({ status: "error", error: err });
+        }
       },
       onCancel: () => finish({ status: "cancel" })
     });
