@@ -51,16 +51,20 @@
           assignFromPayload(svc.snapshot());
         }
 
+        if (!Array.isArray(ids) && typeof svc.get === "function") {
+          assignFromPayload(svc.get(scope));
+        }
+
+        if (!Array.isArray(ids) && typeof svc.getSelection === "function") {
+          assignFromPayload(svc.getSelection(scope));
+        }
+
         if (typeof svc.getIds === "function") {
           const result = svc.getIds();
           if (Array.isArray(result)) ids = result.slice();
           else if (result && typeof result[Symbol.iterator] === "function") ids = Array.from(result);
         } else if (svc.ids && typeof svc.ids[Symbol.iterator] === "function") {
           ids = Array.from(svc.ids);
-        }
-
-        if (!Array.isArray(ids) && typeof svc.get === "function") {
-          assignFromPayload(svc.get(scope));
         }
 
         if (Array.isArray(ids)) {
