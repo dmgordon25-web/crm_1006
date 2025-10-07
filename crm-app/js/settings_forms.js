@@ -1,4 +1,5 @@
 import { STR, text } from './ui/strings.js';
+import { SettingsPhoto } from './settings_profile_photo.js';
 const __STR_FALLBACK__ = (window.STR && typeof window.STR === 'object') ? window.STR : {};
 function __textFallback__(k){ try { return (STR && STR[k]) || (__STR_FALLBACK__[k]) || k; } catch(_){ return k; } }
 
@@ -442,9 +443,12 @@ function __textFallback__(k){ try { return (STR && STR[k]) || (__STR_FALLBACK__[
     profileState.name = mergedProfile && mergedProfile.name ? mergedProfile.name : '';
     profileState.email = mergedProfile && mergedProfile.email ? mergedProfile.email : '';
     profileState.phone = mergedProfile && mergedProfile.phone ? mergedProfile.phone : '';
-    profileState.photoDataUrl = typeof mergedProfile.photoDataUrl === 'string' ? mergedProfile.photoDataUrl : '';
+    const mergedPhoto = typeof mergedProfile.photoDataUrl === 'string' ? mergedProfile.photoDataUrl : '';
+    const persistedPhoto = SettingsPhoto.loadDataUrl();
+    profileState.photoDataUrl = persistedPhoto || mergedPhoto || '';
     const storedSignature = readSignatureLocal();
     profileState.signature = storedSignature || (mergedProfile && mergedProfile.signature ? mergedProfile.signature : '');
+    SettingsPhoto.saveDataUrl(profileState.photoDataUrl, { broadcast: false });
     if(nameInput) nameInput.value = profileState.name;
     if(emailInput) emailInput.value = profileState.email;
     if(phoneInput) phoneInput.value = profileState.phone;
@@ -506,6 +510,13 @@ function __textFallback__(k){ try { return (STR && STR[k]) || (__STR_FALLBACK__[
     const scope = evt && evt.detail && evt.detail.scope;
     if(scope && scope !== 'settings') return;
     hydrateAll();
+  });
+
+  document.addEventListener('settings:profile-photo:stored', evt => {
+    const detail = evt && evt.detail ? evt.detail : {};
+    const dataUrl = typeof detail.dataUrl === 'string' ? detail.dataUrl : '';
+    profileState.photoDataUrl = dataUrl;
+    renderProfileBadge();
   });
 })();
   function readProfileLocal(){
