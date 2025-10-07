@@ -32,6 +32,9 @@
             payloadType = type;
           } else if (Array.isArray(payload)) {
             ids = payload.slice();
+            if (typeof svc.type === "string" && svc.type) {
+              payloadType = svc.type;
+            }
           }
         }
 
