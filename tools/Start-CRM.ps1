@@ -233,13 +233,93 @@ try {
 # ---------- Invoke serve.ps1 and propagate status (no nested exit) ----------
 $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $serveExit = 0
+$serverReady = $false
+$targetUrl = $null
+$failureMessage = $null
+$debugging = ($env:CRM_DEBUG -eq "1") -or ($PSBoundParameters.ContainsKey('Verbose')) -or ($VerbosePreference -eq 'Continue')
+
 try {
-  & $serve -WorkingDirectory $ResolvedWebRoot -StateFile $StateFile @Remaining
-  if ($null -ne $LASTEXITCODE) { $serveExit = [int]$LASTEXITCODE } else { $serveExit = 0 }
-  if ($serveExit -ne 0) { throw "Server failed with exit code $serveExit" }
+  if ($debugging) {
+    Write-Log "[INFO] DEBUG mode detected; running server in foreground."
+    & $serve -WorkingDirectory $ResolvedWebRoot -StateFile $StateFile @Remaining
+    if ($null -ne $LASTEXITCODE) { $serveExit = [int]$LASTEXITCODE } else { $serveExit = 0 }
+    if ($serveExit -ne 0) { throw "Server failed with exit code $serveExit" }
+    $serverReady = $true
+  } else {
+    if (-not $env:CRM_SERVER_STARTED) {
+      $script:ServerJob = Start-Job -Name 'CRMServe' -ScriptBlock {
+        param($Root,$ResolvedWebRoot,$StateFile,$RemainingArgs)
+        Set-Location $Root
+        $serveScript = Join-Path $Root 'serve.ps1'
+        $cmdArgs = @('-WorkingDirectory', $ResolvedWebRoot)
+        if ($StateFile) { $cmdArgs += @('-StateFile', $StateFile) }
+        if ($RemainingArgs) { $cmdArgs += @($RemainingArgs) }
+        & powershell -ExecutionPolicy Bypass -File $serveScript @cmdArgs
+      } -ArgumentList @($PSScriptRoot, $ResolvedWebRoot, $StateFile, $Remaining)
+      $env:CRM_SERVER_STARTED = 1
+    }
+
+    if (-not $script:ServerJob) { throw "Failed to create CRM server job." }
+
+    $pollIterations = 120
+    for ($i = 0; $i -lt $pollIterations; $i++) {
+      $job = $null
+      try { $job = Get-Job -Id $script:ServerJob.Id -ErrorAction Stop } catch {}
+      if (-not $job) { throw "CRM server job is not available." }
+
+      if ($job.State -eq 'Failed') {
+        $jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue
+        $jobErrors = $job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason } | Where-Object { $_ }
+        $details = @()
+        if ($jobErrors) { $details += ($jobErrors | ForEach-Object { $_.ToString() }) }
+        if ($jobOutput) { $details += ($jobOutput | ForEach-Object { $_ }) }
+        $msg = "Server job failed to start."
+        if ($details.Count -gt 0) { $msg += "`n" + ($details -join "`n") }
+        throw $msg
+      }
+
+      if ($job.State -eq 'Completed') {
+        $jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue
+        $msg = "Server job exited before becoming ready."
+        if ($jobOutput) { $msg += "`n" + ($jobOutput -join "`n") }
+        throw $msg
+      }
+
+      if (Test-Path $StateFile) {
+        try {
+          $raw = Get-Content -Path $StateFile -Raw -ErrorAction Stop
+          if ($raw) {
+            $state = $raw | ConvertFrom-Json
+            if ($state -and $state.Url) {
+              $candidateUrl = [string]$state.Url
+              if (Test-ServerAlive -Url $candidateUrl) {
+                $targetUrl = $candidateUrl
+                $serverReady = $true
+                break
+              }
+            }
+          }
+        } catch {
+          Write-Verbose "[START] Waiting for state file: $($_.Exception.Message)"
+        }
+      }
+
+      Start-Sleep -Milliseconds 500
+    }
+
+    if (-not $serverReady -or -not $targetUrl) {
+      throw "Server did not become ready within the expected time."
+    }
+
+    Write-Log "[INFO] CRM server ready at $targetUrl"
+  }
 } catch {
   $global:LAUNCH_FAILED = $true
-  Write-Log ("[ERROR] {0}" -f $_.Exception.Message)
+  $failureMessage = $_.Exception.Message
+  Write-Log ("[ERROR] {0}" -f $failureMessage)
+  if (-not $debugging -and $script:ServerJob) {
+    try { Stop-Job -Job $script:ServerJob -ErrorAction SilentlyContinue | Out-Null } catch {}
+  }
 } finally {
   if ($LAUNCH_FAILED -or $serveExit -ne 0) {
     Write-Log "[EXIT] failure. Log: $LogPath"
@@ -251,14 +331,12 @@ try {
     exit 1
   } else {
     Write-Log "[EXIT] success."
-    try {
-      # If we reached here, server is up and browser launched; exit this host so the console closes.
-      if (-not $env:CRM_DEBUG -and -not $DebugPreference) {
-        Start-Sleep -Seconds 1
-        $host.SetShouldExit(0)
-        exit
-      }
-    } catch { }
+
+    if (-not $debugging) {
+      Start-Sleep -Milliseconds 500
+      try { $host.SetShouldExit(0) } catch {}
+      exit
+    }
     exit 0
   }
 }
