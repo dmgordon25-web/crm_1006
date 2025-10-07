@@ -237,6 +237,7 @@ $serverReady = $false
 $targetUrl = $null
 $failureMessage = $null
 $debugging = ($env:CRM_DEBUG -eq "1") -or ($PSBoundParameters.ContainsKey('Verbose')) -or ($VerbosePreference -eq 'Continue')
+$script:ServerProcess = $null
 
 try {
   if ($debugging) {
@@ -247,42 +248,36 @@ try {
     $serverReady = $true
   } else {
     if (-not $env:CRM_SERVER_STARTED) {
-      $script:ServerJob = Start-Job -Name 'CRMServe' -ScriptBlock {
-        param($Root,$ResolvedWebRoot,$StateFile,$RemainingArgs)
-        Set-Location $Root
-        $serveScript = Join-Path $Root 'serve.ps1'
-        $cmdArgs = @('-WorkingDirectory', $ResolvedWebRoot)
-        if ($StateFile) { $cmdArgs += @('-StateFile', $StateFile) }
-        if ($RemainingArgs) { $cmdArgs += @($RemainingArgs) }
-        & powershell -ExecutionPolicy Bypass -File $serveScript @cmdArgs
-      } -ArgumentList @($PSScriptRoot, $ResolvedWebRoot, $StateFile, $Remaining)
+      $serveScript = Join-Path $PSScriptRoot 'serve.ps1'
+      $processArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serveScript, '-WorkingDirectory', $ResolvedWebRoot)
+      if ($StateFile) { $processArgs += @('-StateFile', $StateFile) }
+      if ($Remaining) { $processArgs += $Remaining }
+
+      try {
+        $script:ServerProcess = Start-Process -FilePath 'powershell' -ArgumentList $processArgs -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
+      } catch {
+        throw "Failed to start CRM server process: $($_.Exception.Message)"
+      }
+
+      if (-not $script:ServerProcess -or -not $script:ServerProcess.Id) {
+        throw "Failed to obtain CRM server process information."
+      }
+
+      Write-Log ("[INFO] CRM server process started (PID {0})" -f $script:ServerProcess.Id)
       $env:CRM_SERVER_STARTED = 1
     }
 
-    if (-not $script:ServerJob) { throw "Failed to create CRM server job." }
-
     $pollIterations = 120
     for ($i = 0; $i -lt $pollIterations; $i++) {
-      $job = $null
-      try { $job = Get-Job -Id $script:ServerJob.Id -ErrorAction Stop } catch {}
-      if (-not $job) { throw "CRM server job is not available." }
-
-      if ($job.State -eq 'Failed') {
-        $jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue
-        $jobErrors = $job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason } | Where-Object { $_ }
-        $details = @()
-        if ($jobErrors) { $details += ($jobErrors | ForEach-Object { $_.ToString() }) }
-        if ($jobOutput) { $details += ($jobOutput | ForEach-Object { $_ }) }
-        $msg = "Server job failed to start."
-        if ($details.Count -gt 0) { $msg += "`n" + ($details -join "`n") }
-        throw $msg
-      }
-
-      if ($job.State -eq 'Completed') {
-        $jobOutput = Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue
-        $msg = "Server job exited before becoming ready."
-        if ($jobOutput) { $msg += "`n" + ($jobOutput -join "`n") }
-        throw $msg
+      if ($script:ServerProcess) {
+        try { $script:ServerProcess.Refresh() } catch {}
+        if ($script:ServerProcess.HasExited) {
+          $exitCode = $null
+          try { $exitCode = $script:ServerProcess.ExitCode } catch {}
+          $msg = "CRM server process exited before becoming ready."
+          if ($null -ne $exitCode) { $msg += " Exit code: $exitCode." }
+          throw $msg
+        }
       }
 
       if (Test-Path $StateFile) {
@@ -317,8 +312,11 @@ try {
   $global:LAUNCH_FAILED = $true
   $failureMessage = $_.Exception.Message
   Write-Log ("[ERROR] {0}" -f $failureMessage)
-  if (-not $debugging -and $script:ServerJob) {
-    try { Stop-Job -Job $script:ServerJob -ErrorAction SilentlyContinue | Out-Null } catch {}
+  if (-not $debugging -and $script:ServerProcess) {
+    try {
+      $script:ServerProcess.Refresh()
+      if (-not $script:ServerProcess.HasExited) { $script:ServerProcess.Kill() | Out-Null }
+    } catch {}
   }
 } finally {
   if ($LAUNCH_FAILED -or $serveExit -ne 0) {
