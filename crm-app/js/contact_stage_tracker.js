@@ -3,10 +3,56 @@
   if (window.__WIRED_STAGE_TRACKER__) return; window.__WIRED_STAGE_TRACKER__ = true;
 
   // Canonical stage order (8 lanes)
-  const STAGES = [
-    "Long Shot","Application","Pre-Approved","Processing",
-    "Underwriting","Approved","CTC","Funded"
+  const STAGE_ITEMS = [
+    { key: 'long-shot', label: 'Long Shot' },
+    { key: 'application', label: 'Application' },
+    { key: 'preapproved', label: 'Pre-Approved' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'underwriting', label: 'Underwriting' },
+    { key: 'approved', label: 'Approved' },
+    { key: 'cleared-to-close', label: 'CTC' },
+    { key: 'funded', label: 'Funded' }
   ];
+  const DEFAULT_STAGE_KEY = STAGE_ITEMS[0].key;
+
+  const KEY_TO_LABEL = new Map();
+  const STAGE_ALIASES = new Map();
+
+  function registerStageAlias(alias, key){
+    const raw = String(alias ?? '').trim();
+    if (!raw) return;
+    const lowered = raw.toLowerCase();
+    if (lowered) STAGE_ALIASES.set(lowered, key);
+    const squished = lowered.replace(/[^a-z0-9]+/g, '');
+    if (squished) STAGE_ALIASES.set(squished, key);
+    const dashed = lowered.replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (dashed) STAGE_ALIASES.set(dashed, key);
+  }
+
+  STAGE_ITEMS.forEach(({ key, label })=>{
+    const normalizedKey = String(key ?? '').trim().toLowerCase() || DEFAULT_STAGE_KEY;
+    KEY_TO_LABEL.set(key, label);
+    KEY_TO_LABEL.set(normalizedKey, label);
+    registerStageAlias(key, key);
+    registerStageAlias(label, key);
+  });
+
+  function normalizeStageKey(value){
+    const raw = String(value ?? '').trim();
+    if (!raw) return DEFAULT_STAGE_KEY;
+    const lowered = raw.toLowerCase();
+    if (STAGE_ALIASES.has(lowered)) return STAGE_ALIASES.get(lowered);
+    const squished = lowered.replace(/[^a-z0-9]+/g, '');
+    if (STAGE_ALIASES.has(squished)) return STAGE_ALIASES.get(squished);
+    const dashed = lowered.replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (STAGE_ALIASES.has(dashed)) return STAGE_ALIASES.get(dashed);
+    return DEFAULT_STAGE_KEY;
+  }
+
+  function stageLabelFromKey(value){
+    const key = normalizeStageKey(value);
+    return KEY_TO_LABEL.get(key) || KEY_TO_LABEL.get(DEFAULT_STAGE_KEY) || STAGE_ITEMS[0].label;
+  }
 
   // ---- Persistence adapter (contacts store if available; else LS by contactId) ----
   const Storage = (function(){
@@ -96,9 +142,12 @@
     }
     rail.innerHTML = '';
 
-    const current = await Storage.readStage(cid) || "Long Shot";
+    const stored = await Storage.readStage(cid);
+    const currentKey = normalizeStageKey(stored);
+    const currentLabel = stageLabelFromKey(currentKey);
     rail.setAttribute('data-contact-id', cid);
-    rail.setAttribute('data-current', current);
+    rail.setAttribute('data-current-key', currentKey);
+    rail.setAttribute('data-current', currentLabel);
 
     // Label
     const label = document.createElement('div');
@@ -108,22 +157,23 @@
     rail.appendChild(label);
 
     // Buttons
-    STAGES.forEach(s=>{
+    STAGE_ITEMS.forEach(({ key, label: stageLabel })=>{
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.setAttribute('data-stage', s);
-      btn.textContent = s;
+      btn.setAttribute('data-stage', key);
+      btn.textContent = stageLabel;
       btn.style.padding = '4px 8px';
       btn.style.fontSize = '12px';
       btn.style.borderRadius = '12px';
       btn.style.border = '1px solid #ccc';
       btn.style.cursor = 'pointer';
-      btn.style.background = (s===current) ? '#e6f4ea' : '#f7f7f7';
-      btn.style.fontWeight = (s===current) ? '600' : '500';
+      const active = key === currentKey;
+      btn.style.background = active ? '#e6f4ea' : '#f7f7f7';
+      btn.style.fontWeight = active ? '600' : '500';
       rail.appendChild(btn);
     });
 
-    rail.__STAGE_STATE__ = { cid, current };
+    rail.__STAGE_STATE__ = { cid, currentKey };
   }
 
   // ---- Events (delegated, idempotent) ----
@@ -134,22 +184,25 @@
     const state = rail.__STAGE_STATE__; if (!state) return;
     const cid = state.cid;
     const sel = btn.getAttribute('data-stage');
+    const selKey = normalizeStageKey(sel);
 
     // No-op if same
-    if (sel === state.current) return;
+    if (selKey === state.currentKey) return;
 
     // Update UI immediately
-    state.current = sel;
-    rail.setAttribute('data-current', sel);
+    state.currentKey = selKey;
+    rail.setAttribute('data-current-key', selKey);
+    rail.setAttribute('data-current', stageLabelFromKey(selKey));
     rail.querySelectorAll('[data-stage]').forEach(b=>{
-      const active = b.getAttribute('data-stage') === sel;
+      const key = normalizeStageKey(b.getAttribute('data-stage'));
+      const active = key === selKey;
       b.style.background = active ? '#e6f4ea' : '#f7f7f7';
       b.style.fontWeight = active ? '600' : '500';
     });
 
     // Persist + optional history
-    await Storage.writeStage(cid, sel);
-    Storage.appendHistory(cid, sel).catch(()=>{});
+    await Storage.writeStage(cid, selKey);
+    Storage.appendHistory(cid, selKey).catch(()=>{});
     window.dispatchAppDataChanged?.("contact:stage:set");
   }, true);
 
