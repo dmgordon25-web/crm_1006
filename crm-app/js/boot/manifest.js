@@ -35,6 +35,8 @@ export const CORE = [
   "/js/notifications.js",
   "/js/calendar_impl.js",
   "/js/calendar.js",
+  "/js/calendar_ics.js",
+  "/js/calendar_actions.js",
   "/js/post_funding.js",
   "/js/qa.js",
   "/js/bulk_log.js",
@@ -64,7 +66,6 @@ export const PATCHES = [
   "/js/patch_2025-10-02_medium_nice.js",
   "/js/patch_2025-09-27_merge_ui.js",
   "/js/patch_2025-09-27_phase6_polish_telemetry.js",
-  "/js/patch_2025-10-03_calendar_ics_button.js",
   "/js/patch_2025-10-03_quick_add_partner.js",
   "/js/patch_2025-10-03_automation_seed.js",
 ];
