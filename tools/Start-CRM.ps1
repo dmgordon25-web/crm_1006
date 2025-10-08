@@ -55,6 +55,16 @@ function Write-EnvBanner {
 }
 Write-EnvBanner
 
+$chrome = @(
+  (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$edge = @(
+  (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+  (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
 function Test-ServerAlive([string]$Url) {
   if (-not $Url) { return $false }
   try {
@@ -69,16 +79,6 @@ function Start-CrmBrowser {
     [Parameter(Mandatory=$true)][string]$Url,
     [switch]$Wait
   )
-
-  $chrome = @(
-    (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-    (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
-    (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
-  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-  $edge = @(
-    (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
-    (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
-  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
   $args = "--new-window `"$Url`""
   try {
@@ -215,6 +215,7 @@ function Resolve-WebRoot([string]$Hint) {
 try {
   $ResolvedWebRoot = Resolve-WebRoot -Hint $WebRoot
   Write-Log "[INFO] WEBROOT: $ResolvedWebRoot"
+  $WEBROOT = $ResolvedWebRoot
 } catch {
   $global:LAUNCH_FAILED = $true
   Write-Log "[ERROR] $($_.Exception.Message)"
@@ -228,126 +229,190 @@ try {
   exit 1
 }
 
-# ---------- Invoke serve.ps1 and propagate status (no nested exit) ----------
-$serve = Join-Path $PSScriptRoot 'serve.ps1'
-$serveExit = 0
-$serverReady = $false
-$targetUrl = $null
-$failureMessage = $null
-$debugging = ($env:CRM_DEBUG -eq "1") -or ($PSBoundParameters.ContainsKey('Verbose')) -or ($VerbosePreference -eq 'Continue')
-$script:ServerProcess = $null
+$DEBUG = ($env:CRM_DEBUG -eq "1") -or ($PSBoundParameters.ContainsKey('Verbose')) -or ($VerbosePreference -eq 'Continue')
 
-try {
-  if ($debugging) {
-    Write-Log "[INFO] DEBUG mode detected; running server in foreground."
-    & $serve -WorkingDirectory $ResolvedWebRoot -StateFile $StateFile @Remaining
-    if ($null -ne $LASTEXITCODE) { $serveExit = [int]$LASTEXITCODE } else { $serveExit = 0 }
-    if ($serveExit -ne 0) { throw "Server failed with exit code $serveExit" }
-    $serverReady = $true
-  } else {
-    if (-not $env:CRM_SERVER_STARTED) {
-      $serveScript = Join-Path $PSScriptRoot 'serve.ps1'
-      $processArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serveScript, '-WorkingDirectory', $ResolvedWebRoot)
-      if ($StateFile) { $processArgs += @('-StateFile', $StateFile) }
-      if ($Remaining) { $processArgs += $Remaining }
+# ===================== BEGIN REPLACEMENT BLOCK =====================
+# Resolve WEBROOT (already computed earlier)
+$WebRoot = $WEBROOT
+if (-not (Test-Path -LiteralPath $WebRoot)) {
+  Write-Log "[ERROR] WEBROOT not found: $WebRoot"
+  exit 2
+}
 
-      try {
-        $script:ServerProcess = Start-Process -FilePath 'powershell' -ArgumentList $processArgs -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
-      } catch {
-        throw "Failed to start CRM server process: $($_.Exception.Message)"
-      }
+# Ensure logs folder
+$LogDir = if ($env:LocalAppData) { Join-Path $env:LocalAppData "CRM\logs" } else { $LogRoot }
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-      if (-not $script:ServerProcess -or -not $script:ServerProcess.Id) {
-        throw "Failed to obtain CRM server process information."
-      }
-
-      Write-Log ("[INFO] CRM server process started (PID {0})" -f $script:ServerProcess.Id)
-      $env:CRM_SERVER_STARTED = 1
-    }
-
-    $pollIterations = 120
-    for ($i = 0; $i -lt $pollIterations; $i++) {
-      if ($script:ServerProcess) {
-        try { $script:ServerProcess.Refresh() } catch {}
-        if ($script:ServerProcess.HasExited) {
-          $exitCode = $null
-          try { $exitCode = $script:ServerProcess.ExitCode } catch {}
-          $msg = "CRM server process exited before becoming ready."
-          if ($null -ne $exitCode) { $msg += " Exit code: $exitCode." }
-          throw $msg
-        }
-      }
-
-      if (Test-Path $StateFile) {
-        try {
-          $raw = Get-Content -Path $StateFile -Raw -ErrorAction Stop
-          if ($raw) {
-            $state = $raw | ConvertFrom-Json
-            if ($state -and $state.Url) {
-              $candidateUrl = [string]$state.Url
-              if (Test-ServerAlive -Url $candidateUrl) {
-                $targetUrl = $candidateUrl
-                $serverReady = $true
-                break
-              }
-            }
-          }
-        } catch {
-          Write-Verbose "[START] Waiting for state file: $($_.Exception.Message)"
-        }
-      }
-
-      Start-Sleep -Milliseconds 500
-    }
-
-    if (-not $serverReady -or -not $targetUrl) {
-      throw "Server did not become ready within the expected time."
-    }
-
-    Write-Log "[INFO] CRM server ready at $targetUrl"
-  }
-} catch {
-  $global:LAUNCH_FAILED = $true
-  $failureMessage = $_.Exception.Message
-  Write-Log ("[ERROR] {0}" -f $failureMessage)
-  if (-not $debugging -and $script:ServerProcess) {
+# Pick an open port in 8080–8090
+function Get-OpenPort {
+  param([int]$Start=8080,[int]$End=8090)
+  for ($p=$Start; $p -le $End; $p++) {
     try {
-      $script:ServerProcess.Refresh()
-      if (-not $script:ServerProcess.HasExited) { $script:ServerProcess.Kill() | Out-Null }
-    } catch {}
+      $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p)
+      $listener.Start()
+      $listener.Stop()
+      return $p
+    } catch {
+      # in use, skip
+    }
   }
-} finally {
-  if ($LAUNCH_FAILED -or $serveExit -ne 0) {
-    Write-Log "[EXIT] failure. Log: $LogPath"
-    Write-Host "Launcher failed. See log:`n$LogPath" -ForegroundColor Red
-    if (-not $KeepOpen) {
-      Write-Host "Press Enter to close..."
-      [void][Console]::ReadLine()
-    }
-    exit 1
-  } else {
-    Write-Log "[EXIT] success."
-    try {
-      # If we reached here, server is up and browser launched; exit this host so the console closes.
-      # Respect the explicit CRM_DEBUG escape hatch and avoid exiting when a debugging preference is active.
-      $shouldAutoExit = -not $env:CRM_DEBUG
+  return $null
+}
+$Port = Get-OpenPort
+if (-not $Port) { Write-Log "[ERROR] No open port in 8080-8090"; exit 3 }
 
-      if ($DebugPreference -and $DebugPreference -notin @('SilentlyContinue', 'Continue')) {
-        $shouldAutoExit = $false
-      }
+$Url = "http://127.0.0.1:$Port/"
 
-      if ($shouldAutoExit) {
-        Start-Sleep -Seconds 1
-        $host.SetShouldExit(0)
-        exit
-      }
-    } catch { }
-
-    if (-not $debugging) {
-      Start-Sleep -Milliseconds 500
-      try { $host.SetShouldExit(0) } catch {}
-      exit
-    }
-    exit 0
+# Build server start candidates (prefer py launcher)
+$candidates = @()
+if (Get-Command py.exe -ErrorAction SilentlyContinue) {
+  # Python 3.7+ supports --directory; also bind explicitly
+  $candidates += @{
+    File = "py.exe";
+    Args = "-3 -m http.server $Port --bind 127.0.0.1 --directory `"$WebRoot`""
+  }
+  # Fallback: older py, cd into root and run without --directory
+  $candidates += @{
+    File = "py.exe";
+    Args = "-m http.server $Port --bind 127.0.0.1"
+    WorkDir = $WebRoot
   }
 }
+if (Get-Command python.exe -ErrorAction SilentlyContinue) {
+  $candidates += @{
+    File = "python.exe";
+    Args = "-m http.server $Port --bind 127.0.0.1 --directory `"$WebRoot`""
+  }
+  $candidates += @{
+    File = "python.exe";
+    Args = "-m http.server $Port --bind 127.0.0.1";
+    WorkDir = $WebRoot
+  }
+}
+
+if ($candidates.Count -eq 0) {
+  Write-Log "[ERROR] Neither py.exe nor python.exe found in PATH."
+  exit 4
+}
+
+# Start server with logging and readiness probe
+$ServerProc = $null
+$SrvOut = Join-Path $LogDir ("server-out-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+$SrvErr = Join-Path $LogDir ("server-err-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+
+function Start-StaticServer {
+  param($spec)
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $spec.File
+  $psi.Arguments = $spec.Args
+  $psi.WorkingDirectory = $(if ($spec.WorkDir) { $spec.WorkDir } else { $WebRoot })
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo = $psi
+
+  # Open output streams
+  $stdout = [System.IO.StreamWriter]::new($SrvOut, $true)
+  $stderr = [System.IO.StreamWriter]::new($SrvErr, $true)
+
+  $null = $proc.Start()
+  $proc.add_OutputDataReceived({ param($s,$e) if ($e.Data) { $stdout.WriteLine($e.Data) ; $stdout.Flush() } })
+  $proc.add_ErrorDataReceived({ param($s,$e) if ($e.Data) { $stderr.WriteLine($e.Data) ; $stderr.Flush() } })
+  $proc.BeginOutputReadLine()
+  $proc.BeginErrorReadLine()
+
+  return @{ Proc = $proc; Out = $stdout; Err = $stderr }
+}
+
+function Stop-StaticServer {
+  param($ctx)
+  if ($ctx -and $ctx.Proc -and -not $ctx.Proc.HasExited) { try { $ctx.Proc.Kill() } catch {} }
+  foreach ($w in @($ctx.Out, $ctx.Err)) { try { if ($w) { $w.Dispose() } } catch {} }
+}
+
+function Wait-ServerReady {
+  param([string]$checkUrl, [int]$timeoutSec = 20)
+  $deadline = (Get-Date).AddSeconds($timeoutSec)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $resp = Invoke-WebRequest -Uri $checkUrl -Method Head -UseBasicParsing -TimeoutSec 2
+      if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 500) { return $true }
+    } catch {}
+    Start-Sleep -Milliseconds 300
+  }
+  return $false
+}
+
+$started = $false
+$ServerCtx = $null
+foreach ($spec in $candidates) {
+  $workDirLog = if ($spec.ContainsKey('WorkDir') -and $spec.WorkDir) { $spec.WorkDir } else { $WebRoot }
+  Write-Log "[INFO] Attempt server: $($spec.File) $($spec.Args) (wd=$workDirLog)"
+  $ctx = Start-StaticServer -spec $spec
+  $ServerProc = $ctx.Proc
+
+  # Early exit detection
+  Start-Sleep -Milliseconds 300
+  if ($ServerProc.HasExited) {
+    Write-Log "[WARN] Server exited immediately. Code=$($ServerProc.ExitCode)"
+    Stop-StaticServer -ctx $ctx
+    continue
+  }
+
+  if (Wait-ServerReady -checkUrl $Url -timeoutSec 25) {
+    Write-Log "[INFO] Server ready at $Url"
+    $ServerCtx = $ctx
+    $Global:__ServerCtx = $ctx
+    $started = $true
+    break
+  } else {
+    Write-Log "[ERROR] Server failed readiness at $Url. Killing and trying next candidate."
+    Stop-StaticServer -ctx $ctx
+  }
+}
+
+if (-not $started) {
+  Write-Log "[ERROR] All server attempts failed."
+  Write-Log "[HINT] Check logs: $SrvOut and $SrvErr"
+  exit 5
+}
+
+try {
+  $state = @{ Url = $Url; Pid = if ($ServerProc) { $ServerProc.Id } else { $null }; Started = (Get-Date).ToString('o') }
+  $state | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
+} catch {
+  Write-Log "[WARN] Unable to write state file: $($_.Exception.Message)"
+}
+
+$args = "--new-window `"$Url`""
+
+# Launch browser (non-blocking in non-DEBUG)
+# Existing logic should have detected Chrome/Edge; reuse your variables: $chrome, $edge, $args, $DEBUG, $KeepOpen
+try {
+  $proc = $null
+  if ($chrome)      { $proc = Start-Process -FilePath $chrome -ArgumentList $args -PassThru }
+  elseif ($edge)    { $proc = Start-Process -FilePath $edge   -ArgumentList $args -PassThru }
+  else              { $proc = Start-Process -FilePath $Url    -PassThru }
+  Write-Log "[INFO] Launched browser. PID=$($proc.Id)"
+} catch {
+  Write-Log "[WARN] Failed to launch browser directly; falling back to default URL open."
+  try { Start-Process -FilePath $Url | Out-Null } catch {}
+}
+
+# In non-DEBUG/!KeepOpen mode, exit immediately so the console closes
+if (-not $DEBUG -and -not $KeepOpen) {
+  Write-Log "[EXIT] success."
+  exit 0
+}
+
+# DEBUG/diagnostic: keep window open; show tail of server logs
+Write-Log "[INFO] DEBUG/KeepOpen active. Tailing server logs (Ctrl+C to quit)."
+Write-Log "[INFO] STDOUT: $SrvOut"
+Write-Log "[INFO] STDERR: $SrvErr"
+try {
+  Get-Content -Path $SrvOut -Wait -ErrorAction SilentlyContinue | ForEach-Object { $_ }
+} catch {}
+# ===================== END REPLACEMENT BLOCK =====================
