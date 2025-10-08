@@ -47,7 +47,7 @@ export const CORE = [
 ];
 
 export const PATCHES = [];
-// Runtime patch importing is disabled by the boot hardener; see boot_hardener.js.
+// Runtime patch importing is temporarily disabled by SafeBoot. Re-enable intentionally when bundle is ready.
 
 export default {
   CORE,

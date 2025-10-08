@@ -1,32 +1,21 @@
 /* eslint-disable no-console */
-/* ===== Safe Boot: disable runtime patch imports, guarantee app boot ===== */
+/* ===== SafeBoot: neutralize runtime patch importing so boot always succeeds ===== */
 (() => {
-  if (window.__SAFEBOOT_WIRED__) return;
-  window.__SAFEBOOT_WIRED__ = true;
-
-  // Default to Safe Boot unless explicitly turned on via URL/localStorage.
+  if (window.__SAFEBOOT__) return; window.__SAFEBOOT__ = true;
   function q(name){ try { return new URLSearchParams(location.search).get(name); } catch { return null; } }
   const enablePatches = (q("patches")==="on") || (localStorage.getItem("crm:patches")==="on");
-
-  // Hard disable known globals that feed patch loaders
-  window.PATCHES = enablePatches ? (window.PATCHES || []) : [];
-  window.LEGACY_PATCHES = enablePatches ? (window.LEGACY_PATCHES || []) : [];
-  window.__EXTRA_PATCHES__ = enablePatches ? (window.__EXTRA_PATCHES__ || []) : [];
-
-  // Monkeypatch a common loader function name if present
-  const noOpLoader = async () => {
-    console.warn("[SafeBoot] Runtime patch importing is disabled. Enable with ?patches=on");
-    return { ok:0, fail:0, skipped: (window.PATCHES||[]).length };
-  };
   if (!enablePatches) {
-    if (typeof window.loadPatches === "function") window.loadPatches = noOpLoader;
-    if (typeof window.loadAllPatches === "function") window.loadAllPatches = noOpLoader;
-    // Guard dynamic loops if code calls them directly later
-    window.__IMPORT_PATCHES__ = noOpLoader;
+    try { window.PATCHES = []; } catch {}
+    try { window.LEGACY_PATCHES = []; } catch {}
+    try { window.__EXTRA_PATCHES__ = []; } catch {}
+    // if a loader function exists, turn it into a no-op
+    const noop = async () => ({ ok:0, fail:0, skipped:0, mode:"safe" });
+    if (typeof window.loadPatches === "function") window.loadPatches = noop;
+    if (typeof window.loadAllPatches === "function") window.loadAllPatches = noop;
+    window.__IMPORT_PATCHES__ = noop;
+    console.warn("[SafeBoot] Runtime patches disabled. Enable with ?patches=on when lists are clean.");
+    try { window.dispatchAppDataChanged?.("boot:safemode"); } catch {}
   }
-
-  // Single repaint to keep contract
-  try { window.dispatchAppDataChanged?.("boot:safemode"); } catch {}
 })();
 
 // Deterministic boot hardener — top-level export, no conditional exports.
