@@ -89,7 +89,90 @@ export async function ensureCoreThenPatches(manifest = {}) {
       console.warn("[boot] core prereqs missing after pass 1; retrying CORE once");
       await importSeq(CORE);
     }
-    await importSeq(PATCHES);
+
+    /* ===== Loader Hardening Helpers ===== */
+    if (!window.__LOADER_HARDEN__) {
+      window.__LOADER_HARDEN__ = true;
+      const patchVersionToken = window.APP_VERSION || window.__BUILD_ID__ || Date.now();
+
+      window.__normalizePatchUrl = function(u) {
+        if (!u) return null;
+        let s = String(u).trim();
+        if (!s.startsWith("/")) s = (s.startsWith("js/") ? "/" + s : s.replace(/^\.?\/*/, "/"));
+        if (!s.startsWith("/js/") && /\.js($|\?)/.test(s)) {
+          if (s === "/calendar_actions.js") s = "/js/calendar_actions.js";
+        }
+        s += (s.includes("?") ? "&" : "?") + "v=" + patchVersionToken;
+        return s;
+      };
+
+      window.__headOk = async function(url) {
+        try {
+          const res = await fetch(url, { method: "HEAD", cache: "no-store" });
+          return res && res.ok;
+        } catch { return false; }
+      };
+
+      window.__listExisting = async function(list) {
+        const seen = new Set();
+        const ok = [];
+        const miss = [];
+        for (const raw of (list || [])) {
+          const url = window.__normalizePatchUrl(raw);
+          if (!url || seen.has(url)) continue;
+          seen.add(url);
+          let exists = await window.__headOk(url);
+          if (!exists) {
+            try {
+              const res = await fetch(url, { method: "GET", cache: "no-store" });
+              exists = res && res.ok && (res.headers.get("content-type") || "").includes("javascript");
+            } catch { exists = false; }
+          }
+          (exists ? ok : miss).push({ raw, url });
+        }
+        return { ok, miss };
+      };
+    }
+
+    /* ===== Identify Patch Sources ===== */
+    const manifestPatches = PATCHES;
+    const legacy = (window.LEGACY_PATCHES || window.__PATCHES_FALLBACK__ || []);
+    const extras = (window.__EXTRA_PATCHES__ || []);
+    console.info("[loader] patch sources: manifest=%d legacy=%d extras=%d",
+      manifestPatches.length, legacy.length, extras.length);
+    console.debug("[loader] manifest PATCHES =", manifestPatches);
+    if (legacy.length) console.debug("[loader] LEGACY_PATCHES =", legacy);
+    if (extras.length) console.debug("[loader] __EXTRA_PATCHES__ =", extras);
+
+    const rawPatches = [...manifestPatches, ...legacy, ...extras];
+
+    /* ===== Filter + Import Patches ===== */
+    const { ok, miss } = await window.__listExisting(rawPatches);
+    if (miss.length) {
+      console.warn("[loader] %d missing/404 patches will be skipped (showing first 10):", miss.length);
+      miss.slice(0, 10).forEach(m => console.warn("  - missing:", m.raw, "→", m.url));
+    }
+
+    let okCount = 0, failCount = 0;
+    for (const item of ok) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await import(item.url);
+        okCount++;
+        acc.loaded.push(item.url);
+        if (!window.__PATCHES_LOADED__.includes(item.url)) window.__PATCHES_LOADED__.push(item.url);
+      } catch (e) {
+        failCount++;
+        acc.failed.push(item.url);
+        if (!window.__PATCHES_FAILED__.includes(item.url)) window.__PATCHES_FAILED__.push(item.url);
+        console.warn("[loader] import failed but continuing:", item.raw, "→", item.url, e?.message || e);
+      }
+    }
+
+    console.info("[boot] patches completed: ok:%d fail:%d (skipped missing:%d)", okCount, failCount, miss.length);
+    window.__PATCHES_SUMMARY__ = { ok: okCount, fail: failCount, skipped: miss.length };
+
+    try { window.dispatchAppDataChanged?.("boot:patches-loaded"); } catch {}
 
     window.__BOOT_DONE__ = {
       loaded: Array.from(new Set(acc.loaded)),
