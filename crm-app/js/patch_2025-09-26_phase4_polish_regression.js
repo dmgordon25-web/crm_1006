@@ -308,6 +308,7 @@
       };
       wrapped.__phase4Wrapped = true;
       wrapped.__phase4Original = original;
+      wrapped.__appDataQueueDependsOnStub = true;
       window.dispatchAppDataChanged = wrapped;
     }
   }
