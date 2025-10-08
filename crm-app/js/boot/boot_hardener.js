@@ -21,8 +21,48 @@ export async function ensureCoreThenPatches(manifest = {}) {
     async function importOne(path) {
       if (!path || typeof path !== "string") return;
       try {
-        const base = (document?.baseURI) ? document.baseURI : (window.location?.href || "/");
-        const spec = new URL(path, base).href;
+        const baseEl = typeof document !== "undefined"
+          ? document.querySelector?.("base")
+          : null;
+        const loc = typeof window !== "undefined" ? window.location : undefined;
+        const baseHint = (baseEl?.href)
+          || (typeof document !== "undefined" ? document.baseURI : null)
+          || (loc?.href)
+          || "/";
+        let baseUrl = null;
+        try {
+          baseUrl = new URL(baseHint, loc?.href || undefined);
+        } catch (_) {
+          try {
+            const origin = loc?.origin;
+            baseUrl = origin ? new URL(baseHint, origin + "/") : null;
+          } catch (__){
+            baseUrl = null;
+          }
+        }
+        const baseDir = baseUrl ? new URL(".", baseUrl).href : null;
+        const resolveRelative = (input) => {
+          if (baseDir) {
+            return new URL(input, baseDir).href;
+          }
+          const origin = loc?.origin;
+          if (origin) {
+            return new URL(input, origin + "/").href;
+          }
+          return new URL(input, "/").href;
+        };
+        let spec;
+        if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(path)) {
+          spec = path;
+        } else if (path.startsWith("//")) {
+          const protocol = loc?.protocol || "https:";
+          spec = `${protocol}${path}`;
+        } else if (path.startsWith("/")) {
+          const trimmed = path.replace(/^\/+/, "");
+          spec = resolveRelative(trimmed);
+        } else {
+          spec = resolveRelative(path);
+        }
         await import(spec);
         acc.loaded.push(spec);
         if (!window.__PATCHES_LOADED__.includes(spec)) window.__PATCHES_LOADED__.push(spec);
