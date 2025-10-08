@@ -2047,6 +2047,102 @@
    </div>
   </dialog>
 
+  <script>
+   (function(){
+    const globalScope = typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : null);
+    if (!globalScope || globalScope.__APP_DATA_QUEUE_BRIDGE__) return;
+    globalScope.__APP_DATA_QUEUE_BRIDGE__ = true;
+
+    const queue = [];
+    let activeHandler = null;
+    let bootResolved = false;
+
+    function cloneDetail(detail){
+     if (!detail || typeof detail !== "object") return detail;
+     try {
+      return JSON.parse(JSON.stringify(detail));
+     } catch (_err) {
+      if (Array.isArray(detail)) return detail.slice();
+      return Object.assign({}, detail);
+     }
+    }
+
+    function flushQueue(){
+     if (!activeHandler || !bootResolved || !queue.length) return;
+     const pending = queue.splice(0, queue.length);
+     pending.forEach((entry) => {
+      try {
+       activeHandler(entry);
+      } catch (err) {
+       try { console.error("[boot] queued app:data dispatch failed", err); }
+       catch (_) {}
+      }
+     });
+    }
+
+    function stub(detail){
+     if (activeHandler && bootResolved) return activeHandler(detail);
+     queue.push(cloneDetail(detail));
+     return undefined;
+    }
+    stub.__appDataQueueStub = true;
+
+    Object.defineProperty(globalScope, "dispatchAppDataChanged", {
+     configurable: true,
+     enumerable: false,
+     get(){
+      return (bootResolved && activeHandler) ? activeHandler : stub;
+     },
+     set(fn){
+      if (fn && fn.__appDataQueueStub) return;
+      activeHandler = typeof fn === "function" ? fn : null;
+      flushQueue();
+     }
+    });
+
+    function markBootResolved(){
+     bootResolved = true;
+     flushQueue();
+    }
+
+    (function wireBootPromiseBridge(){
+     const existing = Object.getOwnPropertyDescriptor(globalScope, "__BOOT_LOADER_MAIN__");
+     if (existing && existing.configurable === false && existing.set == null) {
+      const value = existing.value;
+      if (value && typeof value.then === "function") {
+       value.then(markBootResolved, markBootResolved);
+      } else {
+       markBootResolved();
+      }
+      return;
+     }
+     let stored = existing ? existing.value : undefined;
+     Object.defineProperty(globalScope, "__BOOT_LOADER_MAIN__", {
+      configurable: true,
+      enumerable: false,
+      get(){
+       return stored;
+      },
+      set(value){
+       stored = value;
+       if (value && typeof value.then === "function") {
+        value.then(markBootResolved, markBootResolved);
+       } else {
+        markBootResolved();
+       }
+      }
+     });
+     if (stored && typeof stored.then === "function") {
+      stored.then(markBootResolved, markBootResolved);
+     } else if (stored) {
+      markBootResolved();
+     }
+    })();
+
+    globalScope.__drainAppDataQueue__ = () => { markBootResolved(); };
+   })();
+  </script>
+
   <script src="seed_data_inline.js"></script>
   <script src="seed_test_data.js"></script>
 
