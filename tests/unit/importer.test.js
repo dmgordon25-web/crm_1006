@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 let IMPORTER_INTERNALS;
 let REQ_CONTACT;
@@ -11,8 +11,20 @@ let buildPartnerKeys;
 let createIndex;
 let pickExisting;
 let findTruncatedHeaders;
+let originalWindow;
 
 beforeAll(async () => {
+  originalWindow = global.window;
+  global.window = global.window || globalThis;
+  window.dbGet = vi.fn().mockResolvedValue(null);
+  window.dbPut = vi.fn().mockResolvedValue(null);
+  window.db = {
+    get: vi.fn().mockResolvedValue(null),
+    put: vi.fn().mockResolvedValue(null)
+  };
+  window.dispatchAppDataChanged = vi.fn();
+  window.Toast = { show: vi.fn() };
+
   const stringsModule = await import('../../crm-app/js/ui/strings.js');
   text = stringsModule.text;
 
@@ -33,6 +45,24 @@ beforeAll(async () => {
     findTruncatedHeaders
   } = IMPORTER_INTERNALS);
   vi.resetModules();
+});
+
+afterAll(() => {
+  if (window && window.__APP_DB__ && typeof window.__APP_DB__.close === 'function') {
+    window.__APP_DB__.close();
+  }
+  if (window) {
+    delete window.dbGet;
+    delete window.dbPut;
+    delete window.db;
+    delete window.dispatchAppDataChanged;
+    delete window.Toast;
+  }
+  if (originalWindow === undefined) {
+    delete global.window;
+  } else {
+    global.window = originalWindow;
+  }
 });
 
 describe('importer configuration', () => {

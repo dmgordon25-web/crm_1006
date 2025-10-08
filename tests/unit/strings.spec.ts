@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STR, text } from '../../crm-app/js/ui/strings.ts';
+import { STR, text } from '../../crm-app/js/ui/strings.js';
 
 describe('STR map', () => {
   it('includes critical mortgage terminology', () => {

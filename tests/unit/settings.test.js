@@ -1,17 +1,13 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { resolve, join } from 'node:path';
-import vm from 'node:vm';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-const jsRoot = resolve(repoRoot, 'crm-app/js');
+const scriptsBaseUrl = new URL('../../crm-app/js/', import.meta.url);
+let scriptLoadCounter = 0;
 const DB_NAME = 'crm';
 
-function runScript(relativePath) {
-  const code = readFileSync(join(jsRoot, relativePath), 'utf8');
-  vm.runInThisContext(code, { filename: relativePath });
+async function runScript(relativePath) {
+  const url = new URL(relativePath, scriptsBaseUrl);
+  url.searchParams.set('v', `${Date.now()}-${scriptLoadCounter += 1}`);
+  await import(url.href);
 }
 
 function clearListeners(map) {
@@ -87,8 +83,9 @@ async function resetEnvironment() {
   setupWindow();
   window.Toast = { show: vi.fn() };
   delete window.Settings;
-  runScript('db.js');
-  runScript('data/settings.js');
+  vi.resetModules();
+  await runScript('db.js');
+  await runScript('data/settings.js');
   window.dispatchAppDataChanged = detail => {
     window.dispatchEvent(new CustomEvent('app:data:changed', { detail }));
   };

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const MODULE_PATH = '../../crm-app/js/ui/FormFooter.tsx';
+const MODULE_PATH = '../../crm-app/js/ui/form_footer.js';
 
 type Listener = (event: any) => void;
 
