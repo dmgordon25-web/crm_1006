@@ -243,24 +243,46 @@ if (-not (Test-Path -LiteralPath $WebRoot)) {
 $LogDir = if ($env:LocalAppData) { Join-Path $env:LocalAppData "CRM\logs" } else { $LogRoot }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-# Pick an open port in 8080–8090
+# ===== Guaranteed Open Port Finder =====
 function Get-OpenPort {
-  param([int]$Start=8080,[int]$End=8090)
+  param([int]$Start=8080,[int]$End=8120)
   for ($p=$Start; $p -le $End; $p++) {
     try {
       $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p)
       $listener.Start()
       $listener.Stop()
       return $p
-    } catch {
-      # in use, skip
-    }
+    } catch {}
   }
   return $null
 }
-$Port = Get-OpenPort
-if (-not $Port) { Write-Log "[ERROR] No open port in 8080-8090"; exit 3 }
 
+# Detect and kill stray python or node servers from previous CRM launches
+Write-Log "[INFO] Checking for stale python/http.server processes..."
+$stale = Get-Process | Where-Object { $_.ProcessName -match 'python|node' } | Where-Object {
+  ($_.MainWindowTitle -match 'crm' -or $_.Path -match 'crm_1006' -or $_.StartInfo.Arguments -match 'http.server')
+}
+foreach ($proc in $stale) {
+  try {
+    Write-Log "[WARN] Terminating stale process PID=$($proc.Id) Name=$($proc.ProcessName)"
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+  } catch {}
+}
+Start-Sleep -Milliseconds 500
+
+# Try to claim an open port, retrying if necessary
+$Port = $null
+for ($i=0; $i -lt 3; $i++) {
+  $Port = Get-OpenPort -Start 8080 -End 8120
+  if ($Port) { break }
+  Write-Log "[WARN] No open port found on attempt $($i+1); waiting 1s and retrying..."
+  Start-Sleep -Seconds 1
+}
+if (-not $Port) {
+  Write-Log "[ERROR] Could not find or free any port in 8080–8120. Forcing fallback to 8121."
+  $Port = 8121
+}
+Write-Log "[INFO] Selected open port: $Port"
 $Url = "http://127.0.0.1:$Port/"
 
 # Build server start candidates (prefer py launcher)
