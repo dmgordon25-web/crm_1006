@@ -47,22 +47,6 @@ export const CORE = [
 ];
 
 export const PATCHES = [
-  "/js/patch_20250923_baseline.js",
-  "/js/patch_20250924_bootstrap_ready.js",
-  "/js/patch_20250926_ctc_actionbar.js",
-  "/js/patch_2025-09-26_phase1_pipeline_partners.js",
-  "/js/patch_2025-09-26_phase2_automations.js",
-  "/js/patch_2025-09-26_phase3_dashboard_reports.js",
-  "/js/patch_2025-09-26_phase4_polish_regression.js",
-  "/js/patch_2025-09-27_doccenter2.js",
-  "/js/patch_2025-09-27_contact_linking_5A.js",
-  "/js/patch_2025-09-27_contact_linking_5B.js",
-  "/js/patch_2025-09-27_contact_linking_5C.js",
-  "/js/patch_2025-09-27_nth_bundle_and_qa.js",
-  "/js/patch_2025-09-27_masterfix.js",
-  "/js/patch_2025-09-27_release_prep.js",
-  "/js/patch_2025-09-27_merge_ui.js",
-  "/js/patch_2025-09-27_phase6_polish_telemetry.js",
   "/js/patch_2025-10-02_baseline_ux_cleanup.js",
   "/js/patch_2025-10-02_medium_nice.js",
   "/js/patch_2025-10-03_quick_add_partner.js",
