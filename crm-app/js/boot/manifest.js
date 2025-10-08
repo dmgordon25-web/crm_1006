@@ -50,7 +50,7 @@ export const PATCHES = [
   "/js/patch_2025-10-08_selection_guard.js",
   "/js/patch_2025-10-08_actionbar_harden.js",
   "/js/patch_2025-10-08_partners_edit_router.js",
-  "/js/calendar_actions.js",
+  "/js/calendar_actions.js"
 ];
 
 export default {
