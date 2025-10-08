@@ -56,3 +56,6 @@ export default {
   CORE,
   PATCHES,
 };
+
+// Note: Patch importing is Safe-Mode guarded in boot_hardener.js. Enable patches with ?patches=on or localStorage 'crm:patches=on'.
+// Optional strict abort with ?strict=1 or localStorage 'crm:strictBoot=1'.

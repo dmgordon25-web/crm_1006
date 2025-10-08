@@ -90,93 +90,146 @@ export async function ensureCoreThenPatches(manifest = {}) {
       await importSeq(CORE);
     }
 
-    /* ===== Loader Hardening Helpers ===== */
-    if (!window.__LOADER_HARDEN__) {
-      window.__LOADER_HARDEN__ = true;
-      const patchVersionToken = window.APP_VERSION || window.__BUILD_ID__ || Date.now();
+    // === Forced-Reliable Patch Loader (Safe Mode + Hard-Fail) ===
+    (() => {
+      if (window.__PATCH_LOADER_WIRED__) return;
+      window.__PATCH_LOADER_WIRED__ = true;
 
-      window.__normalizePatchUrl = function(u) {
+      // ---- runtime toggles ----
+      function q(name){ try { return new URLSearchParams(location.search).get(name); } catch { return null; } }
+      const WANT_PATCHES = (q("patches")==="on") || (localStorage.getItem("crm:patches")==="on");
+      const STRICT_FAIL  = (q("strict")==="1") || (localStorage.getItem("crm:strictBoot")==="1");
+
+      // ---- normalize lists from possible sources ----
+      const manifestPatches = (typeof PATCHES !== "undefined" && Array.isArray(PATCHES)) ? PATCHES : [];
+      const legacy          = Array.isArray(window.LEGACY_PATCHES) ? window.LEGACY_PATCHES : [];
+      const extras          = Array.isArray(window.__EXTRA_PATCHES__) ? window.__EXTRA_PATCHES__ : [];
+
+      // Prefer manifest; legacy/extras often contain stale entries
+      let rawList = [...manifestPatches, ...extras, ...legacy];
+
+      // path normalize: ensure /js/ prefix for .js; make absolute; trim
+      function norm(u){
         if (!u) return null;
         let s = String(u).trim();
-        if (!s.startsWith("/")) s = (s.startsWith("js/") ? "/" + s : s.replace(/^\.?\/*/, "/"));
-        if (!s.startsWith("/js/") && /\.js($|\?)/.test(s)) {
+        if (!s) return null;
+        if (!s.startsWith("/")) s = s.startsWith("js/") ? "/" + s : s.replace(/^\.?\/*/, "/");
+        if (/\.js($|\?)/.test(s) && !s.startsWith("/js/")) {
           if (s === "/calendar_actions.js") s = "/js/calendar_actions.js";
         }
-        s += (s.includes("?") ? "&" : "?") + "v=" + patchVersionToken;
         return s;
-      };
-
-      window.__headOk = async function(url) {
-        try {
-          const res = await fetch(url, { method: "HEAD", cache: "no-store" });
-          return res && res.ok;
-        } catch { return false; }
-      };
-
-      window.__listExisting = async function(list) {
-        const seen = new Set();
-        const ok = [];
-        const miss = [];
-        for (const raw of (list || [])) {
-          const url = window.__normalizePatchUrl(raw);
-          if (!url || seen.has(url)) continue;
-          seen.add(url);
-          let exists = await window.__headOk(url);
-          if (!exists) {
-            try {
-              const res = await fetch(url, { method: "GET", cache: "no-store" });
-              exists = res && res.ok && (res.headers.get("content-type") || "").includes("javascript");
-            } catch { exists = false; }
-          }
-          (exists ? ok : miss).push({ raw, url });
-        }
-        return { ok, miss };
-      };
-    }
-
-    /* ===== Identify Patch Sources ===== */
-    const manifestPatches = PATCHES;
-    const legacy = (window.LEGACY_PATCHES || window.__PATCHES_FALLBACK__ || []);
-    const extras = (window.__EXTRA_PATCHES__ || []);
-    console.info("[loader] patch sources: manifest=%d legacy=%d extras=%d",
-      manifestPatches.length, legacy.length, extras.length);
-    console.debug("[loader] manifest PATCHES =", manifestPatches);
-    if (legacy.length) console.debug("[loader] LEGACY_PATCHES =", legacy);
-    if (extras.length) console.debug("[loader] __EXTRA_PATCHES__ =", extras);
-
-    const rawPatches = [...manifestPatches, ...legacy, ...extras];
-
-    /* ===== Filter + Import Patches ===== */
-    const { ok, miss } = await window.__listExisting(rawPatches);
-    if (miss.length) {
-      console.warn("[loader] %d missing/404 patches will be skipped (showing first 10):", miss.length);
-      miss.slice(0, 10).forEach(m => console.warn("  - missing:", m.raw, "→", m.url));
-    }
-
-    let okCount = 0, failCount = 0;
-    for (const item of ok) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await import(item.url);
-        okCount++;
-        acc.loaded.push(item.url);
-        if (!window.__PATCHES_LOADED__.includes(item.url)) window.__PATCHES_LOADED__.push(item.url);
-      } catch (e) {
-        failCount++;
-        acc.failed.push(item.url);
-        if (!window.__PATCHES_FAILED__.includes(item.url)) window.__PATCHES_FAILED__.push(item.url);
-        console.warn("[loader] import failed but continuing:", item.raw, "→", item.url, e?.message || e);
       }
-    }
 
-    console.info("[boot] patches completed: ok:%d fail:%d (skipped missing:%d)", okCount, failCount, miss.length);
-    window.__PATCHES_SUMMARY__ = { ok: okCount, fail: failCount, skipped: miss.length };
+      // de-dupe and normalize
+      const seen = new Set();
+      const list = [];
+      for (const r of rawList) {
+        const n = norm(r);
+        if (!n) continue;
+        if (seen.has(n)) continue;
+        seen.add(n);
+        list.push(n);
+      }
 
-    try { window.dispatchAppDataChanged?.("boot:patches-loaded"); } catch {}
+      // telemetry
+      console.info("[patch-loader] sources: manifest=%d extras=%d legacy=%d", manifestPatches.length, extras.length, legacy.length);
+      console.debug("[patch-loader] manifest:", manifestPatches);
+      if (extras.length) console.debug("[patch-loader] extras:", extras);
+      if (legacy.length) console.debug("[patch-loader] legacy:", legacy);
+      console.info("[patch-loader] normalized unique list size =", list.length);
+
+      // Helpers
+      async function headOk(url){
+        try {
+          const r = await fetch(url, { method:"HEAD", cache:"no-store" });
+          return !!(r && r.ok);
+        } catch { return false; }
+      }
+      async function exists(url){
+        // HEAD first; some static servers don’t implement HEAD—fallback GET
+        if (await headOk(url)) return true;
+        try {
+          const r = await fetch(url, { method:"GET", cache:"no-store" });
+          return !!(r && r.ok && (r.headers.get("content-type")||"").includes("javascript"));
+        } catch { return false; }
+      }
+
+      async function importSequential(urls){
+        let ok=0, fail=0, missing=0;
+        for (const base of urls){
+          const u = base + (base.includes("?") ? "&" : "?") + "v=" + (window.APP_VERSION || window.__BUILD_ID__ || Date.now());
+          const has = await exists(u);
+          if (!has){
+            missing++;
+            const msg = `[patch-loader] missing → ${base}`;
+            if (STRICT_FAIL){
+              console.error(msg);
+              throw new Error(msg);
+            } else {
+              console.warn(msg);
+              continue;
+            }
+          }
+          try {
+            await import(u);
+            ok++;
+          } catch (e) {
+            fail++;
+            const em = e && (e.message || e.toString());
+            if (STRICT_FAIL){
+              throw new Error(`[patch-loader] import failed → ${base} :: ${em}`);
+            } else {
+              console.warn("[patch-loader] import failed (continuing) →", base, em);
+            }
+          }
+        }
+        return {ok, fail, missing};
+      }
+
+      async function run(){
+        // If user didn’t explicitly enable patches, run completely in Safe Mode.
+        if (!WANT_PATCHES){
+          console.warn("[patch-loader] Safe Mode: skipping all patches (enable with ?patches=on or localStorage crm:patches=on).");
+          window.__PATCHES_SUMMARY__ = { ok:0, fail:0, skipped:list.length, mode:"safe" };
+          try { window.dispatchAppDataChanged?.("boot:safe-mode"); } catch {}
+          return true;
+        }
+
+        // Try to import; if anything is missing and not STRICT_FAIL, fall back to Safe Mode (one-time) to guarantee boot.
+        try {
+          const res = await importSequential(list);
+          console.info("[boot] patches completed: ok:%d fail:%d missing:%d mode:%s", res.ok, res.fail, res.missing, "patches-on");
+          window.__PATCHES_SUMMARY__ = { ...res, mode:"patches-on" };
+
+          // Auto fallback to Safe Mode if anything is missing and we’re not in strict mode
+          if ((res.missing > 0 || res.fail > 0) && !STRICT_FAIL){
+            console.warn("[patch-loader] Detected missing/failing patches → enabling Safe Mode and re-running without patches.");
+            // Mark Safe Mode for this session only
+            sessionStorage.setItem("crm:safeOnce", "1");
+            // Re-run quickly by skipping patches but without a full reload
+            window.__PATCHES_SUMMARY__ = { ok:0, fail:0, skipped:list.length, mode:"safe" };
+          }
+          try { window.dispatchAppDataChanged?.("boot:patches-loaded"); } catch {}
+          return true;
+        } catch (e) {
+          // STRICT_FAIL path: stop boot hard and loud.
+          console.error("[boot] ABORT (strict):", e?.message || e);
+          alert("CRM failed to boot (strict mode). Check console for the first missing/failed patch. Disable strict with ?strict=0 or localStorage crm:strictBoot=0.");
+          // Throw again to ensure upstream aborts; caller should catch to present a clean shutdown UI if available
+          throw e;
+        }
+      }
+
+      // Execute and expose a promise for diagnostics
+      window.__PATCH_LOADER_PROMISE__ = run();
+    })();
+
+    await window.__PATCH_LOADER_PROMISE__;
 
     window.__BOOT_DONE__ = {
       loaded: Array.from(new Set(acc.loaded)),
       failed: Array.from(new Set(acc.failed)),
+      patches: window.__PATCHES_SUMMARY__ || null,
     };
 
     // Expose diagnostics helper without side effects
