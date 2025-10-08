@@ -2081,11 +2081,38 @@
      });
     }
 
+    function isStubLike(fn){
+     return !fn || fn === stub || !!fn.__appDataQueueStub;
+    }
+
+    function resolvesViaStub(fn){
+     return !!(fn && fn.__appDataQueueDependsOnStub);
+    }
+
+    function pickResolvedHandler(){
+     let handler = activeHandler;
+     if (isStubLike(handler)) {
+      handler = (previousHandler && previousHandler !== handler && !isStubLike(previousHandler)) ? previousHandler : null;
+     } else if (resolvesViaStub(handler) && previousHandler && previousHandler !== handler && !isStubLike(previousHandler)) {
+      handler = previousHandler;
+     }
+     return handler && !isStubLike(handler) ? handler : null;
+    }
+
+    let stubDispatchDepth = 0;
+
     function stub(detail){
      if (bootResolved) {
-      const target = previousHandler || activeHandler;
-      if (target && target !== stub) return target(detail);
-      return undefined;
+      const target = pickResolvedHandler();
+      if (!target) return undefined;
+      if (!resolvesViaStub(target)) return target(detail);
+      if (stubDispatchDepth > 0) return undefined;
+      stubDispatchDepth++;
+      try {
+       return target(detail);
+      } finally {
+       stubDispatchDepth--;
+      }
      }
      queue.push(cloneDetail(detail));
      return undefined;
