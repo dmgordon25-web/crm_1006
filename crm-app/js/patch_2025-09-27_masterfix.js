@@ -100,6 +100,7 @@ export const __esModule = true;
       return base.apply(this, arguments);
     };
     wrapped.__masterfixWrapped = true;
+    wrapped.__appDataQueueDependsOnStub = true;
     window.dispatchAppDataChanged = wrapped;
   })();
 
