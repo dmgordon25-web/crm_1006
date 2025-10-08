@@ -39,7 +39,7 @@ export function computeActionBarGuards(selectedCount){
     edit: n === 1,
     merge: n === 2,
     emailTogether: n >= 1,
-    emailMass: n >= 3,
+    emailMass: n >= 1,
     addTask: n >= 1,
     bulkLog: n >= 1,
     convertToPipeline: n === 1,

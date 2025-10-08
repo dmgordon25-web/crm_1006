@@ -1,45 +1,57 @@
 /* eslint-disable no-console */
 // Simple, durable notifier with stable queue shape + change events.
-const EVT = "notifications:changed";
-const KEY = "notifications:queue";
+const EVT = 'notifications:changed';
+const KEY = 'notifications:queue';
+
+const GLOBAL = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
 
 function safeParse(json) {
-  try { return JSON.parse(json); } catch(_) { return null; }
+  try { return JSON.parse(json); } catch (_err) { return null; }
 }
 
 function readStorage() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const storage = GLOBAL?.localStorage;
+    if (!storage || typeof storage.getItem !== 'function') return [];
+    const raw = storage.getItem(KEY);
     const arr = safeParse(raw);
     return Array.isArray(arr) ? arr : [];
-  } catch(_) { return []; }
+  } catch (_err) {
+    return [];
+  }
 }
 
 function writeStorage(list) {
-  try { localStorage.setItem(KEY, JSON.stringify(list || [])); } catch(_) {}
+  try {
+    const storage = GLOBAL?.localStorage;
+    if (!storage || typeof storage.setItem !== 'function') return;
+    storage.setItem(KEY, JSON.stringify(list || []));
+  } catch (_err) {
+    // ignore persistence failures
+  }
 }
 
 function normalizeItem(x) {
-  if (!x || typeof x !== "object") return null;
+  if (!x || typeof x !== 'object') return null;
   const id = x.id || x.uuid || x.key || String(Date.now() + Math.random());
   const ts = Number(x.ts || x.time || Date.now());
-  const type = String(x.type || "info");
-  const title = String(x.title || x.message || "");
-  const meta = (x.meta && typeof x.meta === "object") ? x.meta : {};
+  const type = String(x.type || 'info');
+  const title = String(x.title || x.message || '');
+  const meta = (x.meta && typeof x.meta === 'object') ? x.meta : {};
   return { id, ts, type, title, meta };
 }
 
-const Notifier = (function() {
-  // In-memory cache; always keep an Array
-  let queue = Array.isArray(window.__NOTIF_QUEUE__) ? window.__NOTIF_QUEUE__ : null;
+const Notifier = (function createNotifier() {
+  const scope = GLOBAL || {};
+  let queue = Array.isArray(scope.__NOTIF_QUEUE__) ? scope.__NOTIF_QUEUE__ : null;
   if (!queue) {
     queue = readStorage();
-    window.__NOTIF_QUEUE__ = queue; // keep a single reference
+    scope.__NOTIF_QUEUE__ = queue;
   }
 
   function emit() {
     writeStorage(queue);
-    try { window.dispatchEvent(new CustomEvent(EVT)); } catch(_) {}
+    try { scope.dispatchEvent?.(new CustomEvent(EVT)); } catch (_err) {}
   }
 
   return {
@@ -49,7 +61,8 @@ const Notifier = (function() {
       const n = normalizeItem(item);
       if (!n) return false;
       queue.push(n);
-      emit(); return true;
+      emit();
+      return true;
     },
     replace(list) {
       const next = Array.isArray(list) ? list.map(normalizeItem).filter(Boolean) : [];
@@ -61,8 +74,9 @@ const Notifier = (function() {
     remove(id) {
       if (!id) return false;
       const before = queue.length;
-      // FIX: never use reduce on undefined
-      for (let i = queue.length - 1; i >= 0; i--) if (queue[i]?.id === id) queue.splice(i, 1);
+      for (let i = queue.length - 1; i >= 0; i -= 1) {
+        if (queue[i]?.id === id) queue.splice(i, 1);
+      }
       if (queue.length !== before) emit();
       return before !== queue.length;
     },
@@ -70,17 +84,18 @@ const Notifier = (function() {
       if (!queue.length) return 0;
       const n = queue.length;
       queue.length = 0;
-      emit(); return n;
+      emit();
+      return n;
     },
     onChanged(handler) {
-      try { window.addEventListener(EVT, handler); } catch(_) {}
-      return () => { try { window.removeEventListener(EVT, handler); } catch(_) {} };
+      if (typeof handler !== 'function') return () => {};
+      try { scope.addEventListener?.(EVT, handler); } catch (_err) {}
+      return () => { try { scope.removeEventListener?.(EVT, handler); } catch (_err) {}; };
     }
   };
 })();
 
-// Expose a stable global and named exports
-window.Notifier = window.Notifier || Notifier;
+(GLOBAL || {}).Notifier = (GLOBAL || {}).Notifier || Notifier;
 export const getNotificationsCount = () => Notifier.getCount();
 export const listNotifications       = () => Notifier.list();
 export const pushNotification        = (item) => Notifier.push(item);

@@ -1,17 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import 'fake-indexeddb/auto';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { resolve, join } from 'node:path';
-import vm from 'node:vm';
-
-const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
-const jsRoot = resolve(repoRoot, 'crm-app/js');
+const scriptsBaseUrl = new URL('../../crm-app/js/', import.meta.url);
+let scriptLoadCounter = 0;
 const DB_NAME = 'crm';
 
-function runScript(relativePath) {
-  const code = readFileSync(join(jsRoot, relativePath), 'utf8');
-  vm.runInThisContext(code, { filename: relativePath });
+async function runScript(relativePath) {
+  const url = new URL(relativePath, scriptsBaseUrl);
+  url.searchParams.set('v', `${Date.now()}-${scriptLoadCounter += 1}`);
+  await import(url.href);
 }
 
 class StubClassList {
@@ -317,9 +313,10 @@ async function resetEnvironment() {
   }
   await deleteDatabase(DB_NAME).catch(() => {});
   setupEnvironment();
-  runScript('db.js');
-  runScript('data/settings.js');
-  runScript('patch_2025-09-26_phase3_dashboard_reports.js');
+  vi.resetModules();
+  await runScript('db.js');
+  await runScript('data/settings.js');
+  await runScript('patch_2025-09-26_phase3_dashboard_reports.js');
 }
 
 async function seedData() {
