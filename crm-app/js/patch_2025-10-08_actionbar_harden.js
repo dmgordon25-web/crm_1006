@@ -5,61 +5,35 @@
   function activeScope() {
     return document.body?.getAttribute?.("data-scope") || "contacts";
   }
-
-  function resolveSelectionService() {
-    return window.selectionService
-      || window.Selection
-      || window.SelectionService
-      || null;
+  function svc() {
+    return window.selectionService || window.Selection || window.SelectionService || null;
   }
-
   function normalizeIds(ids) {
     if (!ids) return [];
     if (Array.isArray(ids)) return ids.map(String);
     if (ids instanceof Set) return Array.from(ids).map(String);
-    if (typeof ids[Symbol.iterator] === "function") return Array.from(ids).map(String);
-    return [];
+    return [String(ids)];
   }
-
   function currentSelection() {
     const scope = activeScope();
-    const svc = resolveSelectionService();
     try {
-      if (svc) {
-        if (typeof svc.get === "function") {
-          const payload = svc.get(scope);
-          if (payload && Array.isArray(payload.ids)) {
-            const ids = payload.ids.map(String);
-            const type = payload.type || scope;
-            return { ids, type };
-          }
-          if (Array.isArray(payload)) {
-            const ids = payload.map(String);
-            const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
-            return { ids, type };
-          }
+      const s = svc();
+      if (s) {
+        if (typeof s.get === "function") {
+          const got = s.get(scope);
+          if (got?.ids) return { ids: normalizeIds(got.ids), type: got.type || scope };
         }
-        if (typeof svc.getIds === "function") {
-          const ids = normalizeIds(svc.getIds());
-          const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
-          return { ids, type };
-        }
-        if (svc.ids) {
-          const ids = normalizeIds(svc.ids);
-          const type = typeof svc.type === "string" && svc.type ? svc.type : scope;
-          return { ids, type };
-        }
+        if (s.ids) return { ids: normalizeIds(s.ids), type: s.type || scope };
       }
-    } catch (_) {}
+    } catch {}
     return { ids: [], type: scope };
   }
-
   function setEnabled(btn, on) {
     if (!btn) return;
-    const enabled = !!on;
-    btn.classList.toggle("is-disabled", !enabled);
-    btn.dataset.enabled = enabled ? "1" : "0";
-    btn.setAttribute("aria-disabled", enabled ? "false" : "true");
+    const en = !!on;
+    btn.classList.toggle("is-disabled", !en);
+    btn.dataset.enabled = en ? "1" : "0";
+    btn.setAttribute("aria-disabled", en ? "false" : "true");
   }
 
   function recalc() {
@@ -70,46 +44,36 @@
     setEnabled(mergeBtn, ids.length === 2);
   }
 
-  document.addEventListener("DOMContentLoaded", recalc, { once: true });
-  window.addEventListener("selection:change", recalc);
-  document.addEventListener("app:data:changed", recalc);
-
-  function clearSelection(reason) {
-    const svc = resolveSelectionService();
-    try { svc?.clear?.(reason); } catch (_) {}
-  }
-
-  function performMerge(ids, type) {
-    const mergeType = type === "partners" ? "partners" : "contacts";
-    const orchestrator = mergeType === "partners" ? window.PartnersMergeOrchestrator : window.ContactsMergeOrchestrator;
-    const handler = orchestrator?.mergeIds;
-    if (typeof handler !== "function") return null;
-    try {
-      return handler.call(orchestrator, ids);
-    } catch (err) {
-      console.error("[actionbar] merge handler failed", err);
-      return null;
-    }
-  }
-
   document.addEventListener("click", (ev) => {
-    const btn = ev.target?.closest?.('[data-role="actionbar"] [data-act="merge"]');
+    const btn = ev.target.closest?.('[data-role="actionbar"] [data-act="merge"]');
     if (!btn) return;
     ev.preventDefault();
-    if (btn.dataset.enabled !== "1" || btn.getAttribute("aria-disabled") === "true") return;
-
+    const scope = activeScope();
     const { ids, type } = currentSelection();
     if (ids.length !== 2) return;
 
-    const result = performMerge(ids, type);
-    if (result === null) return;
+    const run = window.contactsMerge?.run || window.contactsMergeOrchestrator?.run;
+    const runPartners = window.partnersMerge?.run || window.partnersMergeOrchestrator?.run;
 
-    Promise.resolve(result)
+    const promise =
+      (type === "partners" ? runPartners?.(ids) : run?.(ids)) || Promise.resolve(null);
+
+    Promise.resolve(promise)
       .then(() => {
-        clearSelection("merge");
-        const reason = type === "partners" ? "partners:merge" : "contacts:merge";
-        window.dispatchAppDataChanged?.(reason);
+        try { (window.selectionService || window.Selection || window.SelectionService)?.clear?.("merge"); } catch {}
+        window.dispatchAppDataChanged?.(type === "partners" ? "partners:merge" : "contacts:merge");
       })
       .catch(() => {});
   }, true);
+
+  function onAnySelection() { recalc(); }
+  window.addEventListener("selection:change", onAnySelection);
+  document.addEventListener("selection:changed", onAnySelection);
+  document.addEventListener("app:data:changed", recalc);
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", recalc, { once: true });
+  } else {
+    recalc();
+  }
 })();

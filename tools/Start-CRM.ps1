@@ -81,18 +81,16 @@ function Start-CrmBrowser {
   ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
   $args = "--new-window `"$Url`""
-  $proc = $null
   try {
-    if ($chrome) {
-      $proc = Start-Process -FilePath $chrome -ArgumentList $args -PassThru
-    } elseif ($edge) {
-      $proc = Start-Process -FilePath $edge -ArgumentList $args -PassThru
-    } else {
-      $proc = Start-Process -FilePath $Url -PassThru
-    }
+    $proc = $null
+    if ($chrome)      { $proc = Start-Process -FilePath $chrome -ArgumentList $args -PassThru }
+    elseif ($edge)    { $proc = Start-Process -FilePath $edge   -ArgumentList $args -PassThru }
+    else              { $proc = Start-Process -FilePath $Url    -PassThru }
   } catch {
-    Write-Log "[WARN] Failed to launch browser for reuse: $($_.Exception.Message)"
+    Write-Host "[WARN] Failed to launch browser directly; falling back to default URL open."
+    try { Start-Process -FilePath $Url | Out-Null } catch {}
   }
+  # IMPORTANT: Do NOT Wait-Process on the browser here in non-DEBUG. Let the script exit after server readiness.
 
   if ($Wait -and $proc -and $proc.Id) {
     try { Wait-Process -Id $proc.Id } catch {}
