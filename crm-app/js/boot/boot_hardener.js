@@ -95,15 +95,64 @@ export async function ensureCoreThenPatches(manifest = {}) {
       window.__LOADER_HARDEN__ = true;
       const patchVersionToken = window.APP_VERSION || window.__BUILD_ID__ || Date.now();
 
+      const baseEl = typeof document !== "undefined"
+        ? document.querySelector?.("base")
+        : null;
+      const loc = typeof window !== "undefined" ? window.location : undefined;
+      const baseHint = (baseEl?.href)
+        || (typeof document !== "undefined" ? document.baseURI : null)
+        || (loc?.href)
+        || "/";
+      let baseUrl = null;
+      try {
+        baseUrl = new URL(baseHint, loc?.href || undefined);
+      } catch (_) {
+        try {
+          const origin = loc?.origin;
+          baseUrl = origin ? new URL(baseHint, origin + "/") : null;
+        } catch (__){
+          baseUrl = null;
+        }
+      }
+      const baseDir = baseUrl ? new URL(".", baseUrl).href : null;
+      const defaultOrigin = baseUrl?.origin || loc?.origin || "";
+      const defaultProtocol = loc?.protocol || "https:";
+      const resolveRelative = (input) => {
+        if (!input) return null;
+        if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(input)) return input;
+        if (input.startsWith("//")) return `${defaultProtocol}${input}`;
+        const trimmed = input.replace(/^\/+/, "");
+        if (baseDir) {
+          return new URL(trimmed, baseDir).href;
+        }
+        if (defaultOrigin) {
+          return new URL(trimmed, defaultOrigin + "/").href;
+        }
+        return new URL(trimmed, "/").href;
+      };
+
       window.__normalizePatchUrl = function(u) {
         if (!u) return null;
         let s = String(u).trim();
-        if (!s.startsWith("/")) s = (s.startsWith("js/") ? "/" + s : s.replace(/^\.?\/*/, "/"));
-        if (!s.startsWith("/js/") && /\.js($|\?)/.test(s)) {
-          if (s === "/calendar_actions.js") s = "/js/calendar_actions.js";
+        if (!s) return null;
+        const absoluteLike = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(s) || s.startsWith("//");
+        if (!absoluteLike) {
+          s = s.replace(/^\.?\/*/, "");
+          if (!s.startsWith("js/") && /\.js($|\?)/.test(s)) {
+            if (s === "calendar_actions.js") s = "js/calendar_actions.js";
+          }
         }
-        s += (s.includes("?") ? "&" : "?") + "v=" + patchVersionToken;
+        if (s.includes("?")) {
+          s += "&v=" + patchVersionToken;
+        } else {
+          s += "?v=" + patchVersionToken;
+        }
         return s;
+      };
+
+      window.__resolvePatchUrl = function(url) {
+        if (!url) return null;
+        return resolveRelative(url);
       };
 
       window.__headOk = async function(url) {
@@ -118,7 +167,8 @@ export async function ensureCoreThenPatches(manifest = {}) {
         const ok = [];
         const miss = [];
         for (const raw of (list || [])) {
-          const url = window.__normalizePatchUrl(raw);
+          const normalized = window.__normalizePatchUrl(raw);
+          const url = window.__resolvePatchUrl(normalized);
           if (!url || seen.has(url)) continue;
           seen.add(url);
           let exists = await window.__headOk(url);
