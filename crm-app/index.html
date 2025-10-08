@@ -2055,6 +2055,7 @@
 
     const queue = [];
     let activeHandler = null;
+    let previousHandler = null;
     let bootResolved = false;
 
     function cloneDetail(detail){
@@ -2081,7 +2082,11 @@
     }
 
     function stub(detail){
-     if (activeHandler && bootResolved) return activeHandler(detail);
+     if (bootResolved) {
+      const target = previousHandler || activeHandler;
+      if (target && target !== stub) return target(detail);
+      return undefined;
+     }
      queue.push(cloneDetail(detail));
      return undefined;
     }
@@ -2095,7 +2100,11 @@
      },
      set(fn){
       if (fn && fn.__appDataQueueStub) return;
-      activeHandler = typeof fn === "function" ? fn : null;
+      const nextHandler = typeof fn === "function" ? fn : null;
+      if (activeHandler && activeHandler !== stub) {
+       previousHandler = activeHandler;
+      }
+      activeHandler = nextHandler;
       flushQueue();
      }
     });
