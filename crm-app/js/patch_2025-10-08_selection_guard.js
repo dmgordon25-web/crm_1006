@@ -104,13 +104,19 @@
   document.addEventListener("click", handleClick, true);
 
   function forwardToWindow(ev) {
-    const detail = Object.assign({}, ev.detail || {}, { [FORWARD_FLAG]: "doc" });
-    try { window.dispatchEvent(new CustomEvent("selection:change", { detail })); } catch {}
+    const forwarded = ev?.detail?.[FORWARD_FLAG];
+    if (!forwarded) {
+      const detail = { ...(ev.detail || {}), [FORWARD_FLAG]: "doc" };
+      try { window.dispatchEvent(new CustomEvent("selection:change", { detail })); } catch {}
+    }
     syncChecks();
   }
   function forwardToDocument(ev) {
-    const detail = Object.assign({}, ev.detail || {}, { [FORWARD_FLAG]: "win" });
-    try { document.dispatchEvent(new CustomEvent("selection:changed", { detail })); } catch {}
+    const forwarded = ev?.detail?.[FORWARD_FLAG];
+    if (!forwarded) {
+      const detail = { ...(ev.detail || {}), [FORWARD_FLAG]: "win" };
+      try { document.dispatchEvent(new CustomEvent("selection:changed", { detail })); } catch {}
+    }
     syncChecks();
   }
 
