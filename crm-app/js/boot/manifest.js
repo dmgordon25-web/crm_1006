@@ -52,9 +52,7 @@ export const PATCHES = [
   "/js/patch_2025-10-08_partners_edit_router.js",
   "/js/calendar_actions.js"
 ];
-
 export default {
   CORE,
   PATCHES,
 };
-
