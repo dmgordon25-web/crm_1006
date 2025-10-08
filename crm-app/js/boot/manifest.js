@@ -47,15 +47,6 @@ export const CORE = [
 ];
 
 export const PATCHES = [
-  "/js/patch_2025-10-02_baseline_ux_cleanup.js",
-  "/js/patch_2025-10-02_medium_nice.js",
-  "/js/patch_2025-10-03_quick_add_partner.js",
-  "/js/patch_2025-10-03_calendar_ics_button.js",
-  "/js/patch_2025-10-03_automation_seed.js",
-  "/js/patch_2025-10-07_actionbar_center.js",
-  "/js/patch_2025-10-07_wire_diag_and_stage_tracker.js",
-  "/js/patch_2025-10-07_dashboard_initial_refresh.js",
-  "/js/patch_2025-10-07_settings_profile_photo_ui.js",
   "/js/patch_2025-10-08_selection_guard.js",
   "/js/patch_2025-10-08_actionbar_harden.js",
   "/js/patch_2025-10-08_partners_edit_router.js",
