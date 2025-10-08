@@ -46,12 +46,9 @@ export const CORE = [
   "/js/services/softDelete.js",
 ];
 
-export const PATCHES = [
-  "/js/patch_2025-10-08_selection_guard.js",
-  "/js/patch_2025-10-08_actionbar_harden.js",
-  "/js/patch_2025-10-08_partners_edit_router.js",
-  "/js/calendar_actions.js"
-];
+export const PATCHES = [];
+// Runtime patch importing is disabled by the boot hardener; see boot_hardener.js.
+
 export default {
   CORE,
   PATCHES,
