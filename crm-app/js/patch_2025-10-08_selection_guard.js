@@ -35,7 +35,9 @@
   function createFallbackSelection() {
     const api = {
       get(scope) {
-        const type = normalizeType(scope || fallbackState.type);
+        const actualType = fallbackState.type;
+        const requestedType = scope ? normalizeType(scope) : undefined;
+        const type = requestedType && requestedType === actualType ? requestedType : actualType;
         const ids = cloneFallbackIds();
         return { ids, type };
       },
