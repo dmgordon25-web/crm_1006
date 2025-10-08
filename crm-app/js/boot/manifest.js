@@ -36,7 +36,6 @@ export const CORE = [
   "/js/calendar_impl.js",
   "/js/calendar.js",
   "/js/calendar_ics.js",
-  "/js/calendar_actions.js",
   "/js/post_funding.js",
   "/js/qa.js",
   "/js/bulk_log.js",
@@ -74,6 +73,7 @@ export const PATCHES = [
   "/js/patch_2025-10-08_selection_guard.js",
   "/js/patch_2025-10-08_actionbar_harden.js",
   "/js/patch_2025-10-08_partners_edit_router.js",
+  "/js/calendar_actions.js",
 ];
 
 export default {

@@ -8,18 +8,23 @@
       || document.querySelector('[data-view="calendar"]')
       || document.body
       || document;
+
     if (!host) return;
+
+    // PRE-CLEAN: remove legacy export buttons that lack data-act (avoid duplicates)
+    host.querySelectorAll('button').forEach(btn => {
+      const txt = (btn.textContent || '').trim().toLowerCase();
+      const hasAct = btn.hasAttribute('data-act');
+      if (!hasAct && (txt === 'export ics' || txt === 'export csv')) {
+        btn.remove();
+      }
+    });
 
     const ensureOne = (selector, build) => {
       const list = host.querySelectorAll(selector);
-      if (list.length > 1) {
-        [...list].slice(1).forEach((node) => node.remove());
-        return list[0];
-      }
+      if (list.length > 1) { [...list].slice(1).forEach((n) => n.remove()); return list[0]; }
       if (list.length === 1) return list[0];
-      const el = build();
-      host.appendChild(el);
-      return el;
+      const el = build(); host.appendChild(el); return el;
     };
 
     ensureOne('[data-act="calendar:export:ics"]', () => {
@@ -50,78 +55,59 @@
   }
 
   async function eventsForExport(ids = currentSelectionIds()){
-    const fromStore = async (value) => {
-      if (value && typeof value.then === "function") return value;
-      return value;
-    };
+    const fromStore = async (value) => (value && typeof value.then === "function") ? value : value;
 
     if (ids.length && typeof window.CalendarStore?.getEventsByIds === "function") {
       const events = await fromStore(window.CalendarStore.getEventsByIds(ids));
       if (Array.isArray(events) && events.length) return events;
     }
-
     if (typeof window.CalendarStore?.visibleEvents === "function") {
       const events = await fromStore(window.CalendarStore.visibleEvents());
       if (Array.isArray(events) && events.length) return events;
-      if (events) return events;
     }
-
     if (ids.length && window.db?.get){
       const result = [];
       for (const id of ids){
-        try {
-          const event = await window.db.get("events", id);
-          if (event) result.push(event);
-        } catch (error) {
-          console.warn("calendar export: failed to load event", id, error);
-        }
+        try { const event = await window.db.get("events", id); if (event) result.push(event); } catch {}
       }
       if (result.length) return result;
     }
-
-    const nodes = Array.from(document.querySelectorAll('[data-view="calendar"] [data-event]'));
-    return nodes.map((node) => ({
-      id: node.getAttribute("data-event-id"),
-      title: node.getAttribute("data-title") || node.textContent?.trim() || "Event",
-      start: node.getAttribute("data-start"),
-      end: node.getAttribute("data-end")
-    }));
+    return [];
   }
 
-  function download(filename, text, mime = "text/plain;charset=utf-8"){
-    const blob = new Blob([text], { type: mime });
+  function download(filename, content, mime){
+    const blob = new Blob([content], { type: mime || "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function toCSV(events){
-    const header = ["Title", "Start", "End", "ID"];
-    const rows = (events || []).map((event) => [
-      (event.title || "").replace(/"/g, '""'),
-      event.start || "",
-      event.end || "",
-      event.id || ""
-    ]);
-    const csv = [header, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\r\n");
-    return csv;
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
   function mapEventForICS(event){
+    const title = event.title || event.name || "Event";
+    const desc = event.description || event.desc || event.notes || "";
     return {
-      id: event.id || event.eventId,
-      title: event.title || event.summary || event.name || "Event",
-      desc: event.description || event.desc || event.notes || "",
-      location: event.location || event.place || "",
-      start: event.start || event.startDate || event.start_at,
+      id: event.id,
+      title, description: desc,
+      location: event.location || "",
+      start: event.start || event.startDate || event.starts_at,
       end: event.end || event.endDate || event.end_at,
       allDay: Boolean(event.allDay ?? event.isAllDay ?? false)
     };
+  }
+
+  function toCSV(events){
+    const header = ["Title","Start","End","AllDay","Location","Description"];
+    const lines = [header.join(",")];
+    (events || []).forEach(ev => {
+      const title = (ev.title || ev.name || "").replace(/"/g,'""');
+      const start = ev.start || ev.startDate || ev.starts_at || "";
+      const end = ev.end || ev.endDate || ev.end_at || "";
+      const allday = String(Boolean(ev.allDay ?? ev.isAllDay ?? false));
+      const loc = (ev.location || "").replace(/"/g,'""');
+      const desc = (ev.description || ev.desc || ev.notes || "").replace(/"/g,'""');
+      lines.push([title,start,end,allday,loc,desc].map(x=>`"` + String(x??"").replace(/\r?\n/g," ").trim() + `"`).join(","));
+    });
+    return lines.join("\r\n");
   }
 
   if (document.readyState === "loading") {
@@ -149,14 +135,10 @@
       } else if (typeof window.CRM_ICS?.buildICS === "function") {
         icsContent = window.CRM_ICS.buildICS((events || []).map(mapEventForICS));
       }
-
       if (!icsContent) return;
       const filename = ids.length === 1 ? `event-${ids[0]}.ics` : `events-${Date.now()}.ics`;
-      if (typeof window.CRM_ICS?.downloadICS === "function") {
-        window.CRM_ICS.downloadICS(filename, icsContent);
-      } else {
-        download(filename, icsContent, "text/calendar;charset=utf-8");
-      }
+      if (typeof window.CRM_ICS?.downloadICS === "function") window.CRM_ICS.downloadICS(filename, icsContent);
+      else download(filename, icsContent, "text/calendar;charset=utf-8");
       window.dispatchAppDataChanged?.("calendar:export:ics");
     } else if (csvBtn) {
       const csv = toCSV(events || []);
