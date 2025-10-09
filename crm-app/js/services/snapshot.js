@@ -208,7 +208,11 @@ function normalizeSnapshotPayload(payload) {
   const version = typeof payload.version === 'string' ? payload.version : SNAPSHOT_VERSION;
   const contacts = Array.isArray(payload.contacts) ? payload.contacts : [];
   const partners = Array.isArray(payload.partners) ? payload.partners : [];
-  const settings = Array.isArray(payload.settings) ? payload.settings : [];
+  const settingsValue = payload.settings;
+  const settings =
+    Array.isArray(settingsValue) || (settingsValue && typeof settingsValue === 'object')
+      ? settingsValue
+      : [];
   return { version, contacts, partners, settings };
 }
 
