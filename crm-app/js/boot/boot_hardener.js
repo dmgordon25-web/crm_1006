@@ -43,7 +43,6 @@ window.__BOOT_OK__ = false;
 window.__PATCHES_ENABLED__ = !!PATCHES_ENABLED;
 
 // Cosmetic console helpers
-const green = (...args) => console.log("%c" + args.join(" "), "color: #16a34a");
 const yellow = (...args) => console.log("%c" + args.join(" "), "color: #ca8a04");
 const red = (...args) => console.error("%c" + args.join(" "), "color: #dc2626");
 
@@ -167,8 +166,13 @@ export async function ensureCoreThenPatches({ CORE, PATCHES }) {
 
   // 3) Tiny self-test (non-destructive)
   try {
-    const { selfTest } = await import("./selftest.js");
-    await selfTest();
+    const mod = await import("./selftest.js");
+    const runner =
+      (mod && typeof mod.runSelfTest === "function" && mod.runSelfTest.bind(mod)) ||
+      (mod?.default && typeof mod.default.runSelfTest === "function" && mod.default.runSelfTest.bind(mod.default));
+    if (runner) {
+      await runner();
+    }
   } catch (err) {
     fatal("E-SELFTEST", err);
   }
@@ -176,7 +180,7 @@ export async function ensureCoreThenPatches({ CORE, PATCHES }) {
   // 4) Mark Boot OK (single green line) — apps can key off this
   window.__BOOT_OK__ = true;
   const coreCount = CORE.length;
-  green(`Boot OK — CORE:${coreCount}, PATCHES:${patchesLoaded}`);
+  window.__BOOT_SUMMARY__ = { core: coreCount, patches: patchesLoaded };
 
   // Quiet counters for diagnostics (no UI chrome)
   const diag = ensureDiag();

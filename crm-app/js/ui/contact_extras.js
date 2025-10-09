@@ -185,7 +185,7 @@
 
   const pendingRenders = new Map();
 
-  function render(contact) {
+  async function render(contact) {
     const root = document.querySelector('[data-ui="contact-extras"]');
     if (!root || !contact) return;
 
@@ -204,25 +204,12 @@
     }
 
     const ul = root.querySelector('[data-ce="checklist"]');
-    ul.innerHTML = "";
-    const items = window.docChecklistService?.seedIfEmpty(contact, contact.loanType) || [];
-    for (const it of items) {
-      const li = document.createElement("li");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.className = "ce-check";
-      cb.checked = !!it.done;
-      cb.addEventListener("change", () => {
-        window.docChecklistService?.toggle(contact, it.label, cb.checked);
-        if (typeof window.saveContact === "function") window.saveContact(contact, { reason: "contact:docChecklist" });
-        else if (typeof window.dispatchAppDataChanged === "function") window.dispatchAppDataChanged("contact:docChecklist");
-        render(contact);
-      });
-      const label = document.createElement("span");
-      label.textContent = it.label + (it.done && it.at ? ` — ${fmt(it.at)}` : "");
-      li.appendChild(cb);
-      li.appendChild(label);
-      ul.appendChild(li);
+    if (ul) {
+      if (window.docChecklistService?.mountDocChecklist) {
+        await window.docChecklistService.mountDocChecklist(contact, contact.loanType, { host: ul });
+      } else {
+        ul.innerHTML = "";
+      }
     }
   }
 
@@ -237,7 +224,7 @@
       const contact = await loadContact(id);
       if (!contact) return;
       if (!isActiveContact(id)) return;
-      render(contact);
+      await render(contact);
     });
   }
 
@@ -246,11 +233,11 @@
     if (!id || !isActiveContact(id)) return;
     if (pendingRenders.has(id)) return;
     pendingRenders.set(id, true);
-    Promise.resolve().then(() => {
+    Promise.resolve().then(async () => {
       pendingRenders.delete(id);
       if (!isActiveContact(id)) return;
       const payload = typeof contact === "object" ? contact : null;
-      if (payload) render(payload);
+      if (payload) await render(payload);
       scheduleRenderById(id);
     });
   }
@@ -287,6 +274,6 @@
     const initId = activeContactId();
     if (!initId) return;
     const contact = await loadContact(initId);
-    if (contact) render(contact);
+    if (contact) await render(contact);
   });
 })();
