@@ -240,8 +240,33 @@
     const direct = selectionRowsFromSnapshot(selection);
     if (direct.length) {
       const filtered = filterRowsBySelection(direct, kind, selection);
-      if (filtered.length === selection.ids.length) {
-        return filtered;
+      if (filtered.length) {
+        const expectedIds = Array.isArray(selection?.ids)
+          ? selection.ids
+              .map((id) => (id == null ? '' : String(id)))
+              .filter((id) => id !== '')
+          : [];
+        if (expectedIds.length) {
+          const expectedSet = new Set(expectedIds);
+          const dataset = normalizeDataset(kind) || 'contacts';
+          const filteredSet = new Set(
+            filtered
+              .map((row) => resolveRowId(row, dataset))
+              .filter((id) => id && id !== '')
+          );
+          let hasAll = expectedSet.size === filteredSet.size;
+          if (hasAll) {
+            for (const id of expectedSet) {
+              if (!filteredSet.has(id)) {
+                hasAll = false;
+                break;
+              }
+            }
+          }
+          if (hasAll) {
+            return filtered;
+          }
+        }
       }
     }
 
