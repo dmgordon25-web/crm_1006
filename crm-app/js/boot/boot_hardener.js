@@ -67,10 +67,32 @@ function fatal(code, err) {
   }
 }
 
+// Resolve import URLs to work in both http(s) and file:// contexts without HTML edits.
+function resolveUrl(u) {
+  // Already absolute http(s) — keep as-is.
+  if (/^https?:\/\//i.test(u)) return u;
+
+  // If path starts with "/", treat it as app-rooted when on http(s),
+  // but when on file:// or custom scheme (app://), convert it to a relative path
+  // based on the current script directory (/js/boot/).
+  const isAbsoluteRooted = u.startsWith("/");
+  const isHttpish = location.protocol === "http:" || location.protocol === "https:";
+
+  if (isAbsoluteRooted && isHttpish) return u;
+
+  // Compute a relative from /js/boot/ to the target /js/... when not http(s)
+  // boot_hardener.js lives in /js/boot/, so strip leading "/" and prefix "../"
+  const stripped = isAbsoluteRooted ? u.slice(1) : u.replace(/^\.?\/*/, "");
+  // If someone passed "js/..." keep it; else assume "js/..."
+  const path = stripped.startsWith("js/") ? stripped : ("js/" + stripped);
+  return new URL("../" + path, import.meta.url).toString();
+}
+
 // Loader helpers: module import with unified error handling
 async function importOne(url) {
   try {
-    return await import(url);
+    const resolved = resolveUrl(url);
+    return await import(resolved);
   } catch (err) {
     fatal("E-MODULE-IMPORT:" + url, err);
   }
