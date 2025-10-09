@@ -54,11 +54,13 @@
     try {
       const svc = window.selectionService || window.SelectionService || window.Selection;
       if (!svc) return [];
-      if (typeof svc.get === 'function') {
-        const payload = svc.get('calendar');
-        if (payload && Array.isArray(payload.ids)) {
-          return payload.ids.map((id) => String(id)).filter(Boolean);
-        }
+      const type = typeof svc.getSelectionType === 'function' ? svc.getSelectionType() : svc.type;
+      if (type !== 'calendar') return [];
+      const ids = typeof svc.getSelection === 'function'
+        ? svc.getSelection()
+        : (typeof svc.getIds === 'function' ? svc.getIds() : []);
+      if (Array.isArray(ids)) {
+        return ids.map((id) => String(id)).filter(Boolean);
       }
     } catch (_) {}
     return [];

@@ -1,6 +1,7 @@
 
 // partners.js — partner modal wiring & selection helpers
 import { debounce } from './services/utils.js';
+import * as selection from './services/selection.js';
 
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};
@@ -76,44 +77,63 @@ import { debounce } from './services/utils.js';
     });
   }
 
-  // Selection sync (ensures checkboxes reflect store state)
-  function syncSelectionCheckboxes(scope, ids){
-    const scopeKey = scope && scope.trim() ? scope.trim() : 'partners';
-    const idSet = ids instanceof Set
-      ? ids
-      : new Set(Array.isArray(ids) ? ids.map(String) : []);
-    $$("[data-selection-scope='"+scopeKey+"']").forEach(table => {
-      table.querySelectorAll('tbody tr[data-id]').forEach(row => {
-        const id = row.getAttribute('data-id');
-        if(!id) return;
-        const checkbox = row.querySelector('[data-role="select"]');
-        if(!checkbox) return;
-        const shouldCheck = idSet.has(String(id));
-        if(checkbox.checked !== shouldCheck){
-          checkbox.checked = shouldCheck;
-        }
-      });
+  function partnerRows(){
+    const table = document.getElementById('tbl-partners');
+    if(!table) return [];
+    return Array.from(table.querySelectorAll('tbody tr[data-id]'));
+  }
+
+  function updatePartnerSelectionView(){
+    const svc = selection || window.selectionService || window.SelectionService || window.Selection;
+    const type = typeof svc?.getSelectionType === 'function' ? svc.getSelectionType() : svc?.type || 'contacts';
+    const active = type === 'partners' ? new Set((svc?.getSelection?.() || []).map(String)) : new Set();
+    partnerRows().forEach(row => {
+      const id = row.getAttribute('data-id');
+      if(!id) return;
+      const checkbox = row.querySelector('[data-role="select"]');
+      const shouldCheck = active.has(String(id));
+      if(checkbox && checkbox.checked !== shouldCheck){
+        checkbox.checked = shouldCheck;
+      }
+      row.classList.toggle('is-selected', shouldCheck);
     });
   }
 
-  function handleSelectionSnapshot(snapshot){
-    if(!snapshot || snapshot.scope !== 'partners') return;
-    const ids = snapshot.ids instanceof Set
-      ? snapshot.ids
-      : new Set(Array.from(snapshot.ids || [], value => String(value)));
-    syncSelectionCheckboxes('partners', ids);
+  function ensureSelectionBridge(){
+    if(ensureSelectionBridge.__wired) return;
+    const svc = selection || window.selectionService || window.SelectionService || window.Selection;
+    if(!svc || typeof svc.subscribe !== 'function') return;
+    ensureSelectionBridge.__wired = true;
+    ensureSelectionBridge.__unsubscribe = svc.subscribe((payload)=>{
+      if(payload && (payload.type === 'partners' || payload.scope === 'partners')){
+        updatePartnerSelectionView();
+      }else if(!payload || payload.type !== 'partners'){
+        updatePartnerSelectionView();
+      }
+    });
+    document.addEventListener('app:data:changed', updatePartnerSelectionView);
+    updatePartnerSelectionView();
   }
 
-  function initSelectionMirror(){
-    if(initSelectionMirror.__wired) return;
-    const store = window.SelectionStore || null;
-    if(!store) return;
-    initSelectionMirror.__wired = true;
-    store.subscribe(handleSelectionSnapshot);
-  }
+  ensureSelectionBridge();
+  document.addEventListener('DOMContentLoaded', ensureSelectionBridge);
 
-  initSelectionMirror();
-  document.addEventListener('DOMContentLoaded', initSelectionMirror);
+  const partnersTable = document.getElementById('tbl-partners');
+  if(partnersTable && !partnersTable.__selectionWire){
+    partnersTable.__selectionWire = true;
+    partnersTable.addEventListener('change', (event)=>{
+      const checkbox = event.target && event.target.closest?.('input[type="checkbox"][data-role="select"]');
+      if(!checkbox) return;
+      const row = checkbox.closest('tr[data-id]');
+      const id = row?.getAttribute('data-id') || checkbox.getAttribute('data-id');
+      if(!id) return;
+      if(checkbox.checked){
+        selection.select?.(id, 'partners', 'partners:checkbox');
+      }else{
+        selection.deselect?.(id, 'partners', 'partners:checkbox');
+      }
+    });
+  }
 })();
 
 (function () {
@@ -176,13 +196,20 @@ import { debounce } from './services/utils.js';
 
   table.addEventListener('click', (ev) => {
     if (ev.defaultPrevented) return;
-    const ignore = ev.target.closest?.('input[type="checkbox"], [data-role="select"], label[for]');
+    const editLink = ev.target.closest?.('.partner-name, [data-partner-edit]');
+    if (editLink) {
+      ev.preventDefault();
+      const row = editLink.closest?.('tr[data-id]');
+      const id = resolveId(row || editLink);
+      if (id) openEdit(id);
+      return;
+    }
+    const ignore = ev.target.closest?.('input[type="checkbox"], [data-role="select"], label[for], [data-act]');
     if (ignore) return;
-    const target = ev.target.closest?.('[data-partner-id], tr[data-id], tr[data-row-id]');
-    if (!target) return;
-    const id = resolveId(target);
+    const row = ev.target.closest?.('tr[data-id]');
+    if (!row) return;
+    const id = resolveId(row);
     if (!id) return;
-    if (target.tagName === 'A') ev.preventDefault();
-    openEdit(id);
+    selection.toggle?.(id, 'partners', 'partners:row');
   });
 })();

@@ -45,10 +45,17 @@
   }
 
   function currentSelectionIds(){
-    if (window.selectionService?.get){
-      const sel = window.selectionService.get("calendar");
-      const ids = Array.isArray(sel) ? sel : (Array.isArray(sel?.ids) ? sel.ids : []);
-      if (ids.length) return ids;
+    const svc = window.selectionService || window.SelectionService || window.Selection;
+    if (svc){
+      try {
+        const type = typeof svc.getSelectionType === 'function' ? svc.getSelectionType() : svc.type;
+        if (type === 'calendar') {
+          const ids = typeof svc.getSelection === 'function' ? svc.getSelection() : (typeof svc.getIds === 'function' ? svc.getIds() : []);
+          if (Array.isArray(ids) && ids.length) return ids.map((id) => String(id));
+        }
+      } catch (err) {
+        console.warn('[calendar] selection lookup failed', err);
+      }
     }
     const rows = Array.from(document.querySelectorAll('[data-view="calendar"] [data-event][aria-selected="true"]'));
     return rows.map((row) => row.getAttribute("data-event-id")).filter(Boolean);
