@@ -82,7 +82,11 @@ if(!$ServerJob){
 $verifyArgs = @()
 if($Mode -eq 'http'){ $verifyArgs += @('-Url', ($Prefix + 'index.html')) } else { $verifyArgs += @('-File', $Index) }
 $verifyArgs += @('-Selectors', (Join-Path $PSScriptRoot 'smoke_selectors.json'))
-$verify = & (Join-Path $PSScriptRoot 'smoke.ps1') @verifyArgs
+$smokeHost = (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue)?.Source
+if(-not $smokeHost){ $smokeHost = (Get-Command 'powershell.exe' -ErrorAction SilentlyContinue)?.Source }
+if(-not $smokeHost){ $smokeHost = ($PSVersionTable.PSEdition -eq 'Core') ? 'pwsh' : 'powershell' }
+$smokeScript = Join-Path $PSScriptRoot 'smoke.ps1'
+& $smokeHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $smokeScript @verifyArgs | Out-Null
 $exit = $LASTEXITCODE
 
 if($exit -ne 0){
