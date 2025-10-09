@@ -94,7 +94,23 @@ function DumpDom([string]$target,[int]$budgetMs,[ref]$stdout,[ref]$stderr){
   $args = @('--headless=new','--disable-gpu',"--virtual-time-budget=$budgetMs",'--dump-dom', $target)
   $psi = New-Object System.Diagnostics.ProcessStartInfo
   $psi.FileName = $bin; $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
-  $psi.Arguments = [string]::Join(' ', $args)
+  $argListProp = $psi.PSObject.Properties['ArgumentList']
+  if($argListProp -and $psi.ArgumentList){
+    foreach($arg in $args){
+      [void]$psi.ArgumentList.Add($arg)
+    }
+  } else {
+    $escape = {
+      param([string]$value)
+      if([string]::IsNullOrEmpty($value)){ return '""' }
+      if($value -notmatch '[\s"]'){ return $value }
+      $escaped = $value -replace '(\\*)"', '$1$1"'
+      $escaped = $escaped -replace '(\\+)$', '$1$1'
+      return '"' + $escaped + '"'
+    }
+    $escapedArgs = $args | ForEach-Object { & $escape $_ }
+    $psi.Arguments = [string]::Join(' ', $escapedArgs)
+  }
   $p = New-Object System.Diagnostics.Process
   $p.StartInfo = $psi
   $null = $p.Start()
