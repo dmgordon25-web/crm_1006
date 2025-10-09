@@ -115,3 +115,74 @@ import { debounce } from './patch_2025-10-02_baseline_ux_cleanup.js';
   initSelectionMirror();
   document.addEventListener('DOMContentLoaded', initSelectionMirror);
 })();
+
+(function () {
+  if (window.__WIRED_partnersRowClick) return;
+  window.__WIRED_partnersRowClick = true;
+
+  const scopeSelectors = [
+    '[data-view="partners"]',
+    '[data-page="partners"]',
+    '#view-partners',
+    '#partners',
+  ];
+
+  let host = null;
+  for (const sel of scopeSelectors) {
+    const node = document.querySelector?.(sel);
+    if (node) { host = node; break; }
+  }
+
+  const table = host?.querySelector?.('#tbl-partners tbody')
+    || document.querySelector?.('#tbl-partners tbody')
+    || host;
+
+  if (!table) return;
+
+  const resolveId = (el) => {
+    if (!el) return null;
+    const attrNames = ['data-partner-id', 'data-id', 'data-row-id'];
+    for (const name of attrNames) {
+      const value = el.getAttribute?.(name);
+      if (value) return value;
+    }
+    const data = el.dataset || {};
+    if (data.partnerId) return data.partnerId;
+    if (data.id) return data.id;
+    if (data.rowId) return data.rowId;
+    return null;
+  };
+
+  const openEdit = async (id) => {
+    if (!id) return;
+    try {
+      if (typeof window.openPartnerEditModal === 'function') {
+        await Promise.resolve(window.openPartnerEditModal(id));
+        return;
+      }
+      if (typeof window.showPartnerModal === 'function') {
+        await Promise.resolve(window.showPartnerModal({ id }));
+        return;
+      }
+      if (typeof window.requestPartnerModal === 'function') {
+        await Promise.resolve(window.requestPartnerModal(id));
+        return;
+      }
+      console.warn('Partner edit modal function not found');
+    } catch (err) {
+      console.error('Partner edit open failed', err);
+    }
+  };
+
+  table.addEventListener('click', (ev) => {
+    if (ev.defaultPrevented) return;
+    const ignore = ev.target.closest?.('input[type="checkbox"], [data-role="select"], label[for]');
+    if (ignore) return;
+    const target = ev.target.closest?.('[data-partner-id], tr[data-id], tr[data-row-id]');
+    if (!target) return;
+    const id = resolveId(target);
+    if (!id) return;
+    if (target.tagName === 'A') ev.preventDefault();
+    openEdit(id);
+  });
+})();
