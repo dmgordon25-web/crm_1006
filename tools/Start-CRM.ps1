@@ -17,6 +17,13 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $WebRoot  = (Resolve-Path -LiteralPath (Join-Path $RepoRoot 'crm-app')).Path
 $Index    = Join-Path $WebRoot 'index.html'
 $JsRoot   = Join-Path $WebRoot 'js'
+$sep = [IO.Path]::DirectorySeparatorChar
+if ($WebRoot.Length -gt 0 -and $WebRoot[$WebRoot.Length-1] -eq $sep) {
+  $WebRootPrefix = $WebRoot
+} else {
+  $WebRootPrefix = $WebRoot + $sep
+}
+$WebRootPrefix = [IO.Path]::GetFullPath($WebRootPrefix)
 
 Say "Repo: $RepoRoot"
 Say "Web : $WebRoot"
@@ -95,6 +102,18 @@ $Mime = @{
 }
 function Get-Mime([string]$p) { $e=[IO.Path]::GetExtension($p).ToLower(); if ($Mime.ContainsKey($e)) { $Mime[$e] } else { 'application/octet-stream' } }
 
+function Resolve-SafePath([string]$candidate) {
+  if ([string]::IsNullOrWhiteSpace($candidate)) { return $null }
+  try {
+    $full = [IO.Path]::GetFullPath($candidate)
+  } catch {
+    return $null
+  }
+  if (-not $full.StartsWith($WebRootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $null }
+  if (Test-Path -LiteralPath $full) { return $full }
+  return $null
+}
+
 # Launch browser
 $opened = $false
 $tryList = @(
@@ -130,12 +149,11 @@ while ($true) {
     $path = [System.Uri]::UnescapeDataString($raw).TrimStart('/')
     if ([string]::IsNullOrWhiteSpace($path)) { $path = 'index.html' }
     if ($path.EndsWith('/')) { $path = $path + 'index.html' }
-    $fs = Join-Path $WebRoot $path
-    if (-not (Test-Path -LiteralPath $fs)) {
-      $alt = Join-Path (Join-Path $WebRoot $path) 'index.html'
-      if (Test-Path -LiteralPath $alt) { $fs = $alt }
+    $fs = Resolve-SafePath (Join-Path $WebRoot $path)
+    if (-not $fs) {
+      $fs = Resolve-SafePath (Join-Path (Join-Path $WebRoot $path) 'index.html')
     }
-    if (Test-Path -LiteralPath $fs) {
+    if ($fs) {
       $bytes = [System.IO.File]::ReadAllBytes($fs)
       $ctx.Response.ContentType = Get-Mime $fs
       $ctx.Response.Headers['Cache-Control'] = 'no-cache'
