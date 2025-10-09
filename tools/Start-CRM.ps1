@@ -53,7 +53,7 @@ Add-Type -AssemblyName System.Web
 
 function Get-MimeType([string]`$path) {
   switch ([System.IO.Path]::GetExtension(`$path).ToLower()) {
-    $( $Mime.GetEnumerator() | ForEach-Object { "  '$_' { return '$($Mime[$_])' }" } )
+    $( $Mime.GetEnumerator() | ForEach-Object { "  '$($_.Key)' { return '$($_.Value)' }" } )
     default { return 'application/octet-stream' }
   }
 }
