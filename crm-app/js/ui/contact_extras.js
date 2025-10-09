@@ -42,9 +42,156 @@
     try { return new Date(iso).toLocaleString(); } catch { return ""; }
   }
 
+  function activeContactId() {
+    try {
+      const root = document.querySelector('[data-view="contact"]') || document.body;
+      const attr = root?.getAttribute?.("data-contact-id");
+      const fallback = typeof window.__ACTIVE_CONTACT_ID__ === "string" ? window.__ACTIVE_CONTACT_ID__ : null;
+      const id = attr && String(attr).trim() ? String(attr).trim() : fallback && String(fallback).trim();
+      return id || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function contactIdFromCandidate(candidate, scopeHint) {
+    if (candidate == null) return null;
+    if (typeof candidate === "string" || typeof candidate === "number" || typeof candidate === "boolean") {
+      const str = String(candidate).trim();
+      return str || null;
+    }
+    if (typeof candidate !== "object") return null;
+    if (candidate === window) return null;
+
+    if (candidate.contactId != null) return contactIdFromCandidate(candidate.contactId, scopeHint);
+    if (candidate.contactID != null) return contactIdFromCandidate(candidate.contactID, scopeHint);
+    if (candidate.contact_id != null) return contactIdFromCandidate(candidate.contact_id, scopeHint);
+
+    const scope = scopeHint
+      || candidate.scope
+      || candidate.store
+      || candidate.entity
+      || candidate.topic
+      || candidate.type
+      || candidate.source
+      || candidate.reason
+      || candidate.action
+      || candidate.kind
+      || "";
+
+    const looksContact = /contact/i.test(String(scope || ""));
+    const hasTraits = looksContact
+      || Object.prototype.hasOwnProperty.call(candidate, "stage")
+      || Object.prototype.hasOwnProperty.call(candidate, "loanType")
+      || Object.prototype.hasOwnProperty.call(candidate, "firstName")
+      || Object.prototype.hasOwnProperty.call(candidate, "lastName")
+      || Object.prototype.hasOwnProperty.call(candidate, "email")
+      || Object.prototype.hasOwnProperty.call(candidate, "phone");
+
+    if (hasTraits && candidate.id != null) return contactIdFromCandidate(candidate.id, scope);
+    if ((candidate.entity === "contacts" || candidate.table === "contacts") && candidate.id != null) {
+      return contactIdFromCandidate(candidate.id, scope);
+    }
+
+    if (candidate.contact) return contactIdFromCandidate(candidate.contact, scope);
+    return null;
+  }
+
+  function gatherContactIds(detail) {
+    const ids = new Set();
+    const stack = [];
+    const seen = new Set();
+    if (detail !== undefined) stack.push({ value: detail, scope: null });
+
+    while (stack.length) {
+      const { value, scope } = stack.pop();
+      if (value == null) continue;
+      const type = typeof value;
+      if (type === "string" || type === "number" || type === "boolean") {
+        if (type === "string" && /contact/i.test(value)) {
+          const active = activeContactId();
+          if (active) ids.add(active);
+        } else if (scope && /contact/i.test(String(scope))) {
+          const id = contactIdFromCandidate(value, scope);
+          if (id) ids.add(id);
+        }
+        continue;
+      }
+      if (type !== "object") continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
+
+      const currentScope =
+        scope
+        || value.scope
+        || value.store
+        || value.entity
+        || value.topic
+        || value.type
+        || value.source
+        || value.reason
+        || value.action
+        || value.kind
+        || "";
+
+      const candidateId = contactIdFromCandidate(value, currentScope);
+      if (candidateId) ids.add(candidateId);
+
+      const looksContact = /contact/i.test(String(currentScope || ""));
+
+      const arrays = [
+        value.contactIds,
+        looksContact ? value.ids : null,
+        value.contacts,
+        value.items,
+        value.records,
+      ];
+      for (const arr of arrays) {
+        if (!Array.isArray(arr)) continue;
+        for (const entry of arr) stack.push({ value: entry, scope: currentScope });
+      }
+
+      const nestedKeys = ["contact", "record", "item", "payload", "detail", "data", "target"];
+      for (const key of nestedKeys) {
+        if (value[key]) stack.push({ value: value[key], scope: currentScope });
+      }
+    }
+
+    return ids;
+  }
+
+  function isActiveContact(id) {
+    const active = activeContactId();
+    return !!active && active === id;
+  }
+
+  async function loadContact(contactId) {
+    const id = contactId == null ? "" : String(contactId).trim();
+    if (!id) return null;
+    const get = typeof window.dbGet === "function"
+      ? (cid) => window.dbGet("contacts", cid)
+      : (typeof window.db?.get === "function" ? (cid) => window.db.get("contacts", cid) : null);
+    if (!get) return null;
+    try {
+      if (typeof window.openDB === "function") {
+        try { await window.openDB(); } catch (_) {}
+      }
+      const contact = await get(id);
+      return contact || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  const pendingRenders = new Map();
+
   function render(contact) {
     const root = document.querySelector('[data-ui="contact-extras"]');
     if (!root || !contact) return;
+
+    const targetId = contactIdFromCandidate(contact.id != null ? contact.id : (contact.contactId ?? contact.contactID ?? contact.contact_id));
+    const activeId = activeContactId();
+    if (activeId && targetId && activeId !== targetId) return;
 
     const tl = root.querySelector('[data-ce="timeline"]');
     tl.innerHTML = "";
@@ -79,20 +226,67 @@
     }
   }
 
-  const orig = window.dispatchAppDataChanged;
-  window.dispatchAppDataChanged = function patched(reason) {
-    const r = String(reason || "");
-    const out = orig ? orig.apply(this, arguments) : undefined;
+  function scheduleRenderById(contactId) {
+    const id = contactIdFromCandidate(contactId);
+    if (!id || !isActiveContact(id)) return;
+    if (pendingRenders.has(id)) return;
+    pendingRenders.set(id, true);
+    Promise.resolve().then(async () => {
+      pendingRenders.delete(id);
+      if (!isActiveContact(id)) return;
+      const contact = await loadContact(id);
+      if (!contact) return;
+      if (!isActiveContact(id)) return;
+      render(contact);
+    });
+  }
+
+  function scheduleRenderWithContact(contact) {
+    const id = contactIdFromCandidate(contact); // handles objects and primitives
+    if (!id || !isActiveContact(id)) return;
+    if (pendingRenders.has(id)) return;
+    pendingRenders.set(id, true);
+    Promise.resolve().then(() => {
+      pendingRenders.delete(id);
+      if (!isActiveContact(id)) return;
+      const payload = typeof contact === "object" ? contact : null;
+      if (payload) render(payload);
+      scheduleRenderById(id);
+    });
+  }
+
+  function handleDispatch(detail) {
     try {
-      if (/contact/i.test(r)) {
-        const c = typeof window.getActiveContact === "function" ? window.getActiveContact() : null;
-        if (c) render(c);
+      if (detail && typeof detail === "object") {
+        if (detail.contact) scheduleRenderWithContact(detail.contact);
+        if (Array.isArray(detail.contacts)) {
+          for (const item of detail.contacts) scheduleRenderWithContact(item);
+        }
       }
+      const ids = gatherContactIds(detail);
+      ids.forEach(scheduleRenderById);
     } catch (_) {}
+  }
+
+  const orig = window.dispatchAppDataChanged;
+  window.dispatchAppDataChanged = function patched(detail) {
+    const out = orig ? orig.apply(this, arguments) : undefined;
+    try { handleDispatch(detail); } catch (_) {}
     return out;
   };
 
   injectPanel();
-  const initContact = typeof window.getActiveContact === "function" ? window.getActiveContact() : null;
-  if (initContact) render(initContact);
+  document.addEventListener("contact:stageHistory:changed", (event) => {
+    try {
+      const id = contactIdFromCandidate(event?.detail?.contactId || event?.detail);
+      if (id) scheduleRenderById(id);
+    } catch (_) {}
+  });
+
+  Promise.resolve().then(async () => {
+    const initId = activeContactId();
+    if (!initId) return;
+    const contact = await loadContact(initId);
+    if (contact) render(contact);
+  });
 })();
