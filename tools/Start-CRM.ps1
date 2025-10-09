@@ -1,240 +1,111 @@
-[CmdletBinding()]
-param(
-    [int]$PreferredPort = 8080
-)
-
+#requires -version 5.1
 $ErrorActionPreference = 'Stop'
-Set-StrictMode -Version Latest
+$PSNativeCommandUseErrorActionPreference = $true
 
-function Write-Log {
-    param(
-        [string]$Level,
-        [string]$Message
-    )
-    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $line = "{0} [{1}] {2}" -f $timestamp, $Level, $Message
-    Write-Host $line
-    Add-Content -Path $Global:LogFile -Value $line
+function Log { param([string]$msg,[string]$lvl='INFO')
+  $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  Write-Host "$ts [$lvl] $msg"
 }
 
-function Log-Info { param([string]$Message) Write-Log -Level 'INFO' -Message $Message }
-function Log-Warn { param([string]$Message) Write-Log -Level 'WARN' -Message $Message }
-function Log-Error { param([string]$Message) Write-Log -Level 'ERROR' -Message $Message }
+# Resolve roots
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$webRoot  = (Resolve-Path -LiteralPath (Join-Path $repoRoot 'crm-app')).Path
+$logsDir  = Join-Path $env:LOCALAPPDATA 'CRM\logs'
+New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Resolve-Path (Join-Path $scriptDir '..')
-$webRoot = Join-Path $repoRoot 'crm-app'
-if (-not (Test-Path -LiteralPath $webRoot)) {
-    throw "WEBROOT missing: $webRoot"
+# Unique log pair
+$stamp   = Get-Date -Format 'yyyyMMdd_HHmmss'
+$base    = Join-Path $logsDir "launcher_$stamp"
+$stdout  = "$base.out.log"
+$stderr  = "$base.err.log"
+
+Log "Resolved repo root: $repoRoot"
+Log "Using web root: $webRoot"
+
+# Pick a port (8080..8090)
+$port = 8080
+for ($p=8080; $p -le 8090; $p++) {
+  try { $tcp = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,$p); $tcp.Start(); $tcp.Stop(); $port=$p; break } catch {}
 }
 
-$logDir = Join-Path $env:LOCALAPPDATA 'CRM\logs'
-New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-$Global:LogFile = Join-Path $logDir ("Start-CRM_{0:yyyyMMdd_HHmmss}.log" -f (Get-Date))
+# Locate node (optional)
+$nodeExe = $null
+$nodeCandidates = @(
+  "$env:ProgramFiles\nodejs\node.exe",
+  "$env:ProgramFiles(x86)\nodejs\node.exe",
+  (Get-Command node.exe -ErrorAction SilentlyContinue)?.Source
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+if ($nodeCandidates) { $nodeExe = $nodeCandidates }
 
-try {
-    Log-Info "Resolved repo root: $repoRoot"
-    Log-Info "Using web root: $webRoot"
+# Decide server strategy
+$serverJs = Join-Path $PSScriptRoot 'node_static_server.js'
+$useNode  = $nodeExe -and (Test-Path -LiteralPath $serverJs)
 
-    function Test-PortAvailable {
-        param([int]$Port)
-        $listener = $null
-        try {
-            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
-            $listener.Start()
-            return $true
-        } catch {
-            return $false
-        } finally {
-            if ($listener) { $listener.Stop() }
-        }
-    }
+$url = "http://127.0.0.1:$port/"
 
-    function Get-AvailablePort {
-        param([int]$Preferred)
-        $candidates = New-Object System.Collections.Generic.List[int]
-        if ($Preferred -gt 0) { [void]$candidates.Add($Preferred) }
-        8075..8099 | ForEach-Object { if (-not $candidates.Contains($_)) { [void]$candidates.Add($_) } }
-        foreach ($port in $candidates) {
-            if (Test-PortAvailable -Port $port) { return $port }
-        }
-        throw 'No open port available in the expected range.'
-    }
-
-    $port = Get-AvailablePort -Preferred $PreferredPort
-    $url = "http://127.0.0.1:$port/"
-
-    $nodeCmd = Get-Command 'node.exe' -ErrorAction SilentlyContinue
-    if (-not $nodeCmd) {
-        $nodeCmd = Get-Command 'node' -ErrorAction SilentlyContinue
-    }
-
-    $serverProcess = $null
-    $serverOut = Join-Path $logDir ("server_{0:yyyyMMdd_HHmmss}.log" -f (Get-Date))
-
-    if ($nodeCmd) {
-        $nodeScript = Join-Path $scriptDir 'node_static_server.js'
-        $arguments = @($nodeScript, $webRoot, $port)
-        Log-Info "Launching Node static server via $($nodeCmd.Source)"
-        $serverProcess = Start-Process -FilePath $nodeCmd.Source -ArgumentList $arguments -WorkingDirectory $repoRoot -PassThru -NoNewWindow -RedirectStandardOutput $serverOut -RedirectStandardError $serverOut
-    } else {
-        Log-Warn 'Node not found in PATH. Falling back to PowerShell HttpListener.'
-        $fallbackScript = Join-Path ([System.IO.Path]::GetTempPath()) ("crm_fallback_{0:N}.ps1" -f [guid]::NewGuid())
-        $fallbackSource = @'
-param(
-    [string]$Root,
-    [int]$Port,
-    [string]$Log
-)
-$ErrorActionPreference = 'Stop'
-Set-StrictMode -Version Latest
+# Launch server
+if ($useNode) {
+  Log "Launching Node static server via $nodeExe"
+  $args = @("$serverJs","--root",$webRoot,"--port","$port")
+  # IMPORTANT: RedirectStandardOutput and RedirectStandardError must be DIFFERENT files
+  $proc = Start-Process -FilePath $nodeExe -ArgumentList $args -WorkingDirectory $repoRoot `
+          -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+}
+else {
+  Log "Node not found or server script missing; using PowerShell Simple HTTP listener"
+  $serverScript = @"
 Add-Type -AssemblyName System.Net.HttpListener
-
-function Write-Log {
-    param([string]$Message)
-    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $line = "{0} [SERVE] {1}" -f $timestamp, $Message
-    Add-Content -Path $Log -Value $line
+\$h = New-Object System.Net.HttpListener
+\$h.Prefixes.Add('http://127.0.0.1:$($port)/')
+\$h.Start()
+while (\$true) {
+  \$ctx = \$h.GetContext()
+  \$path = [System.Web.HttpUtility]::UrlDecode(\$ctx.Request.Url.AbsolutePath.TrimStart('/'))
+  if ([string]::IsNullOrWhiteSpace(\$path)) { \$path = 'index.html' }
+  \$fsPath = Join-Path '$($webRoot -replace '\\','\\')' \$path
+  if (-not (Test-Path -LiteralPath \$fsPath)) { \$ctx.Response.StatusCode = 404; \$ctx.Response.Close(); continue }
+  \$bytes = [System.IO.File]::ReadAllBytes(\$fsPath)
+  \$ctx.Response.ContentLength64 = \$bytes.Length
+  \$ctx.Response.OutputStream.Write(\$bytes,0,\$bytes.Length)
+  \$ctx.Response.Close()
+}
+"@
+  $proc = Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-Command",$serverScript) `
+          -WorkingDirectory $repoRoot -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 }
 
-$listener = [System.Net.HttpListener]::new()
-$prefix = "http://127.0.0.1:$Port/"
-$listener.Prefixes.Add($prefix)
-$listener.Start()
-Write-Log "PowerShell listener active on $prefix (root: $Root)"
-
-$mime = @{
-    '.html' = 'text/html; charset=utf-8'
-    '.htm'  = 'text/html; charset=utf-8'
-    '.js'   = 'application/javascript; charset=utf-8'
-    '.mjs'  = 'application/javascript; charset=utf-8'
-    '.css'  = 'text/css; charset=utf-8'
-    '.json' = 'application/json; charset=utf-8'
-    '.png'  = 'image/png'
-    '.jpg'  = 'image/jpeg'
-    '.jpeg' = 'image/jpeg'
-    '.svg'  = 'image/svg+xml'
-    '.ico'  = 'image/x-icon'
-    '.gif'  = 'image/gif'
-    '.webp' = 'image/webp'
+Start-Sleep -Milliseconds 400
+if (-not $proc -or $proc.HasExited) {
+  Log "Failed to start server process; see $stdout and $stderr" 'ERROR'
+  Exit 1
 }
 
+# Open browser (Chrome → Edge → default)
+$indexUrl = "${url}index.html"
+$opened = $false
+$chrome = "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
+$chrome2= "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
+$edge   = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+$edge2  = "${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe"
+foreach ($b in @($chrome,$chrome2,$edge,$edge2)) {
+  if (-not $opened -and (Test-Path -LiteralPath $b)) {
+    Start-Process -FilePath $b -ArgumentList @("--new-window",$indexUrl) | Out-Null
+    $opened = $true
+  }
+}
+if (-not $opened) { Start-Process $indexUrl | Out-Null }
+
+Log "Server up on $url"
+Log "Browser launched with $indexUrl"
+Log "stdout -> $stdout"
+Log "stderr -> $stderr"
+
+# Keep console attached until user closes browser or Ctrl+C
 try {
-    while ($listener.IsListening) {
-        $context = $listener.GetContext()
-        $request = $context.Request
-        $response = $context.Response
-        try {
-            $rawPath = $request.Url.AbsolutePath
-            $decoded = [Uri]::UnescapeDataString($rawPath)
-            if ([string]::IsNullOrEmpty($decoded) -or $decoded -eq '/') {
-                $decoded = '/index.html'
-            }
-            $relative = $decoded.TrimStart('/')
-            $targetPath = [System.IO.Path]::Combine($Root, $relative)
-            $fullPath = [System.IO.Path]::GetFullPath($targetPath)
-            if (-not $fullPath.StartsWith([System.IO.Path]::GetFullPath($Root))) {
-                throw 'Forbidden'
-            }
-            if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-                $response.StatusCode = 404
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes('Not found')
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            } else {
-                $ext = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
-                $contentType = $mime[$ext]
-                if (-not $contentType) { $contentType = 'application/octet-stream' }
-                $bytes = [System.IO.File]::ReadAllBytes($fullPath)
-                $response.ContentType = $contentType
-                if ($ext -eq '.html') {
-                    $response.Headers['Cache-Control'] = 'no-cache'
-                } else {
-                    $response.Headers['Cache-Control'] = 'public, max-age=60'
-                }
-                $response.ContentLength64 = $bytes.Length
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            }
-        } catch {
-            if ($_.Exception.Message -eq 'Forbidden') {
-                $response.StatusCode = 403
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes('Forbidden')
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            } else {
-                Write-Log "Serve error: $($_.Exception.Message)"
-                $response.StatusCode = 500
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes('Internal Server Error')
-                $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            }
-        } finally {
-            $response.OutputStream.Close()
-        }
-    }
+  while (-not $proc.HasExited) { Start-Sleep -Milliseconds 500 }
 } finally {
-    $listener.Stop()
+  if ($proc -and -not $proc.HasExited) { $proc.CloseMainWindow() | Out-Null }
 }
-'@
-        Set-Content -Path $fallbackScript -Value $fallbackSource -Encoding UTF8
-        $pwsh = if (Test-Path (Join-Path $PSHOME 'pwsh.exe')) {
-            Join-Path $PSHOME 'pwsh.exe'
-        } elseif (Test-Path (Join-Path $PSHOME 'powershell.exe')) {
-            Join-Path $PSHOME 'powershell.exe'
-        } else {
-            'powershell.exe'
-        }
-        $serverProcess = Start-Process -FilePath $pwsh -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$fallbackScript,$webRoot,$port,$serverOut) -WorkingDirectory $repoRoot -PassThru -WindowStyle Hidden
-        Register-ObjectEvent -InputObject $serverProcess -EventName Exited -Action { Remove-Item -Path $using:fallbackScript -ErrorAction SilentlyContinue } | Out-Null
-    }
+Exit 0
 
-    if (-not $serverProcess) {
-        throw 'Failed to start HTTP server.'
-    }
-
-    Log-Info "Starting server on $url"
-
-    function Wait-ServerReady {
-        param([string]$PingUrl, [int]$TimeoutSeconds = 20)
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        while ((Get-Date) -lt $deadline) {
-            try {
-                $response = Invoke-WebRequest -Uri $PingUrl -Method Head -UseBasicParsing -TimeoutSec 2
-                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
-                    return $true
-                }
-            } catch {
-                Start-Sleep -Milliseconds 250
-            }
-        }
-        return $false
-    }
-
-    if (-not (Wait-ServerReady -PingUrl $url -TimeoutSeconds 25)) {
-        throw "Server failed to respond at $url"
-    }
-
-    function Launch-Browser {
-        param([string]$TargetUrl)
-        $browsers = @('chrome.exe','msedge.exe','chrome','msedge')
-        foreach ($name in $browsers) {
-            $cmd = Get-Command $name -ErrorAction SilentlyContinue
-            if ($cmd) {
-                Start-Process -FilePath $cmd.Source -ArgumentList $TargetUrl | Out-Null
-                return $true
-            }
-        }
-        Start-Process $TargetUrl | Out-Null
-        return $true
-    }
-
-    Launch-Browser -TargetUrl $url | Out-Null
-    Log-Info 'Browser launched'
-
-    Log-Info "Waiting on server process PID $($serverProcess.Id)"
-    Wait-Process -Id $serverProcess.Id
-    exit 0
-} catch {
-    Log-Error $_.Exception.Message
-    if ($serverProcess -and -not $serverProcess.HasExited) {
-        try { $serverProcess.Kill() } catch {}
-    }
-    exit 1
-}
+# EOF
