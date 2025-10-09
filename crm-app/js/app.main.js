@@ -62,11 +62,11 @@ async function bootstrapLongShotsSeed() {
       if (flag === "0") {
         shouldRun = false;
       } else if (flag === "1" || flag === "true") {
-        shouldRun = true;
+        shouldRun = devEnabled;
       }
     }
   } catch (_err) {
-    shouldRun = shouldRun || devEnabled;
+    shouldRun = devEnabled;
   }
 
   if (!shouldRun) return;
