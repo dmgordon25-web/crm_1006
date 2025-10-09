@@ -14,15 +14,29 @@
       );
   }
 
-  async function uuidv5(name, ns) {
-    // ns is canonical UUID; convert to bytes
-    const nsBytes = new Uint8Array(
-      ns
+  function toBytes(value) {
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) {
+      return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    }
+    if (typeof value === "string") return new TextEncoder().encode(value);
+    if (Array.isArray(value)) return new Uint8Array(value);
+    throw new TypeError("Expected string, array, or byte buffer");
+  }
+
+  function uuidStringToBytes(uuid) {
+    return new Uint8Array(
+      uuid
         .replace(/-/g, "")
         .match(/.{1,2}/g)
         .map((h) => parseInt(h, 16))
     );
-    const nameBytes = new TextEncoder().encode(name);
+  }
+
+  async function uuidv5(name, ns) {
+    const nsBytes = typeof ns === "string" ? uuidStringToBytes(ns) : toBytes(ns);
+    const nameBytes = toBytes(name);
     const bytes = new Uint8Array(nsBytes.length + nameBytes.length);
     bytes.set(nsBytes, 0);
     bytes.set(nameBytes, nsBytes.length);
