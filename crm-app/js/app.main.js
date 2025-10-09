@@ -55,8 +55,9 @@ async function bootstrapLongShotsSeed() {
     if (typeof localStorage !== "undefined") {
       let flag = localStorage.getItem("crm:seed");
       if (flag === null) {
-        localStorage.setItem("crm:seed", "1");
-        flag = "1";
+        const initial = devEnabled ? "1" : "0";
+        localStorage.setItem("crm:seed", initial);
+        flag = initial;
       }
       if (flag === "0") {
         shouldRun = false;
