@@ -1,0 +1,11 @@
+:root {
+  --body-font-size: 16px;
+  --text-primary: #1a1a1a;
+  --text-muted: #4b5563;
+  --surface-background: #f8fafc;
+  --surface-panel: #ffffff;
+  --primary: #0a66c2;
+  --primary-text: #ffffff;
+  --focus-ring: #0a66c2;
+  --tap-target-size: 44px;
+}

@@ -1,0 +1,2201 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+ <meta charset="utf-8"/>
+ <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <base href="./"/>
+  <title>
+   THE CRM Tool — Modular v1 (Unified v0905 R5 baseline)
+  </title>
+ <link href="styles.css" rel="stylesheet"/>
+</head>
+<body>
+  <div id="diagnostic-splash" hidden style="padding:24px 16px">
+   <div class="card" role="alert" style="max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:12px">
+    <h2 data-role="diag-title" style="margin:0">Diagnostics</h2>
+    <p class="muted" data-role="diag-message" hidden></p>
+    <div class="muted" data-role="diag-patch-summary">
+     Patches loaded: <span data-role="diag-patch-count">0</span>
+    </div>
+    <ul class="muted" data-role="diag-details" hidden style="margin:0;padding-left:18px"></ul>
+    <ul data-role="diag-patch-list" style="margin:0;padding-left:20px;max-height:220px;overflow:auto"></ul>
+    <button class="btn brand" data-role="diag-run-selftest" type="button">Run Self-Test</button>
+   </div>
+  </div>
+  <div class="container">
+   <div id="diagnostics" hidden></div>
+   <div class="top-shell">
+    <header class="row header-bar">
+     <h1 class="app-title">
+      <a class="title-link" href="#" id="app-title-link">
+       <span class="title-main">THE CRM Tool</span>
+       <span class="title-sub">Modular v1</span>
+       <span class="title-sub accent">Powered by DGO</span>
+      </a>
+     </h1>
+     <div class="grow">
+     </div>
+     <div id="lo-profile-chip" style="text-align:right;margin-right:12px;min-width:180px">
+      <div class="fine-print muted">Loan Officer</div>
+      <div data-role="lo-name">Set your profile</div>
+      <div class="fine-print muted" data-role="lo-contact">—</div>
+     </div>
+     <button class="btn" id="btn-open-settings" type="button">
+      Settings
+     </button>
+     <button class="btn brand" id="btn-add-contact">
+      Add Contact
+     </button>
+     <button class="btn" data-quick-add id="quick-add" type="button">
+      Quick Add
+     </button>
+     <div class="dropdown" id="notif-wrap" style="position:relative">
+      <button aria-label="Notifications" class="btn" id="notif-bell" title="Notifications">
+       🔔
+       <span class="badge-pill" id="notif-badge" style="display:none;margin-left:6px">
+        0
+       </span>
+      </button>
+      <div class="card hidden" id="notif-panel" style="position:absolute;right:0;top:42px;min-width:320px;max-height:60vh;overflow:auto">
+       <div class="row" style="align-items:center">
+        <strong>
+         Notifications
+        </strong>
+        <span class="grow">
+        </span>
+        <button class="btn danger" id="btn-clear-notifs">
+         Clear All
+        </button>
+       </div>
+       <ul class="muted" id="notif-bell-list" style="padding-left:18px">
+       </ul>
+      </div>
+     </div>
+    </header>
+    <nav class="row" id="main-nav" style="margin-top:12px">
+     <button class="btn active" data-nav="dashboard">
+      Dashboard
+     </button>
+     <button class="btn" data-nav="longshots">
+      Long Shots
+     </button>
+     <button class="btn" data-nav="pipeline">
+      Pipeline
+     </button>
+     <button class="btn" data-nav="partners">
+      Partners
+     </button>
+     <button class="btn" data-nav="notifications">
+      Notifications
+     </button>
+     <button class="btn nav-split" data-nav="calendar">
+      Calendar
+     </button>
+     <button class="btn" data-nav="reports">
+      Client Portfolio
+     </button>
+     <button class="btn" data-nav="workbench">
+      Workbench
+     </button>
+    </nav>
+   </div>
+   <!-- DASHBOARD -->
+  <main id="view-dashboard">
+   <div class="row" id="dashboard-header" style="align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <h2 style="margin:0;font-size:18px">Dashboard</h2>
+    <span class="muted" id="dashboard-mode-caption">Focus on today&#39;s priorities.</span>
+    <span class="grow"></span>
+    <div class="row" role="group" aria-label="Dashboard scope">
+     <button class="btn pill active" data-dashboard-mode="today" type="button">Today</button>
+     <button class="btn pill" data-dashboard-mode="all" type="button">All</button>
+    </div>
+   </div>
+   <section class="card" id="dashboard-focus"></section>
+   <section class="card" id="dashboard-filters"></section>
+   <section class="card" id="dashboard-kpis"></section>
+   <section class="card" id="dashboard-pipeline-overview"></section>
+   <section class="card" id="dashboard-today"></section>
+   <section class="card" id="referral-leaderboard"></section>
+   <section class="card" id="dashboard-stale"></section>
+   <section class="grid insights-grid" id="dashboard-insights">
+     <div class="card insight-card span-2" id="goal-progress-card">
+      <div class="insight-head">
+       <div class="insight-icon goals">🎯</div>
+       <div>
+        <h4>Production Goals</h4>
+        <p class="muted">Monthly targets versus real progress.</p>
+       </div>
+      </div>
+      <div class="goal-progress">
+       <div id="goal-progress-metrics">
+        <div class="goal-line">
+         <div class="goal-meta">
+          <strong>Funded Loans</strong>
+          <span class="muted" id="goal-funded-label">0 of 0</span>
+         </div>
+         <div class="goal-bar"><span id="goal-funded-bar"></span></div>
+        </div>
+        <div class="goal-line">
+         <div class="goal-meta">
+          <strong>Loan Volume</strong>
+          <span class="muted" id="goal-volume-label">$0 of $0</span>
+         </div>
+         <div class="goal-bar"><span id="goal-volume-bar"></span></div>
+        </div>
+       </div>
+       <div class="goal-empty muted" id="goal-empty-state" style="display:none">Set monthly goals in Settings → Goals to start tracking progress.</div>
+      <div class="goal-footnote muted" id="goal-progress-footnote">Targets reset each calendar month.</div>
+     </div>
+    </div>
+    <div class="card insight-card partner-hub numbers-glance span-full">
+     <div class="insight-head numbers-glance-head">
+      <div class="insight-icon numbers-glance-icon">📊</div>
+      <div>
+       <h4>Numbers at a glance</h4>
+       <p class="muted">A quick pulse on partners, referrals, and pipeline momentum.</p>
+      </div>
+     </div>
+     <div class="partner-hub-grid numbers-glance-grid">
+      <section>
+       <h5>Partner Portfolio <span class="count-badge" id="partner-portfolio-count">0</span></h5>
+       <p class="partner-hub-sub muted">Tier mix across active partners</p>
+       <div class="insight-list" id="partner-tier-breakdown">
+        —
+       </div>
+      </section>
+      <section>
+       <h5>Referral Leaders</h5>
+       <p class="partner-hub-sub muted">Top partners feeding your funnel</p>
+       <ol class="insight-list ranked" id="top3">
+       </ol>
+      </section>
+      <section>
+       <h5>Pipeline Momentum <span class="count-badge" id="pipeline-momentum-count">0</span></h5>
+       <p class="partner-hub-sub muted">Stage distribution at a glance</p>
+       <div class="insight-list stage-breakdown" id="pipeline-breakdown">
+        —
+       </div>
+      </section>
+     </div>
+    </div>
+     <div class="card insight-card span-2">
+     <div class="insight-head">
+      <div class="insight-icon calendar">🗓️</div>
+      <div>
+       <h4>Pipeline Calendar</h4>
+       <p class="muted">Keep a pulse on the next 30 days</p>
+      </div>
+      <div class="insight-actions">
+       <button class="btn pill" data-ics-source="pipeline-calendar">Export .ics</button>
+      </div>
+     </div>
+     <div class="pipeline-calendar" id="pipeline-calendar">
+      <div class="empty muted">Upcoming milestones will appear here once scheduled.</div>
+     </div>
+    </div>
+     <div class="card insight-card">
+      <div class="insight-head">
+       <div class="insight-icon tasks">⚡</div>
+      <div>
+       <h4>Priority Actions</h4>
+       <p class="muted">Overdue & high-impact follow-ups</p>
+      </div>
+      <div class="insight-actions">
+       <button class="btn pill" data-ics-source="priority-actions">Export .ics</button>
+      </div>
+     </div>
+     <ul class="insight-list actionable" id="needs-attn">
+     </ul>
+    </div>
+     <div class="card insight-card">
+      <div class="insight-head">
+       <div class="insight-icon timeline">📌</div>
+      <div>
+       <h4>Milestones Ahead</h4>
+       <p class="muted">Upcoming events & touchpoints</p>
+      </div>
+      <div class="insight-actions">
+       <button class="btn pill" data-ics-source="milestones">Export .ics</button>
+      </div>
+     </div>
+     <ul class="insight-list timeline" id="upcoming">
+     </ul>
+    </div>
+     <div class="card insight-card">
+      <div class="insight-head">
+       <div class="insight-icon docs">📂</div>
+       <div>
+        <h4>Document Pulse</h4>
+        <p class="muted">Outstanding requests across clients</p>
+       </div>
+      </div>
+      <div class="doc-status" id="doc-status-summary">
+      </div>
+     </div>
+    </section>
+   <section class="grid opportunities-grid" id="dashboard-opportunities" style="margin-top:12px">
+     <div class="card insight-card" id="rel-opps-card">
+      <div class="insight-head">
+       <div class="insight-icon relationships">📞</div>
+       <div>
+        <h4>Relationship Opportunities</h4>
+        <p class="muted">Pipeline borrowers needing a touch</p>
+       </div>
+       <div class="insight-actions">
+        <button class="btn pill" data-ics-source="rel-opps">Export .ics</button>
+       </div>
+      </div>
+      <ul class="insight-list spotlight" id="rel-opps">
+       —
+      </ul>
+     </div>
+     <div class="card insight-card" id="nurture-card">
+      <div class="insight-head">
+       <div class="insight-icon nurture">💙</div>
+       <div>
+        <h4>Client Care Radar</h4>
+        <p class="muted">Funded clients ready for a nurture</p>
+       </div>
+       <div class="insight-actions">
+        <button class="btn pill" data-ics-source="nurture">Export .ics</button>
+       </div>
+      </div>
+      <ul class="insight-list spotlight" id="nurture">
+       —
+      </ul>
+     </div>
+     <div class="card insight-card" id="closing-watch-card">
+      <div class="insight-head">
+       <div class="insight-icon closing">🛎️</div>
+       <div>
+        <h4>Closing Watchlist</h4>
+        <p class="muted">Deals approaching the finish line</p>
+       </div>
+       <div class="insight-actions">
+        <button class="btn pill" data-ics-source="closing-watch">Export .ics</button>
+       </div>
+      </div>
+      <ul class="insight-list spotlight" id="closing-watch">
+       —
+      </ul>
+     </div>
+    </section>
+    <section class="card">
+     <p class="widget-summary muted">Manage document checklists and outstanding requests.</p>
+     <div class="doc-center" id="doc-center">
+     </div>
+    </section>
+    <section class="card status-stack">
+     <details class="status-panel" data-panel="inprogress" open="">
+      <summary>
+       <div class="status-summary">
+        <div>
+         <strong>In Progress</strong>
+         <div class="status-sub muted">Monitor borrowers currently moving through the pipeline.</div>
+        </div>
+        <span class="status-count"><span id="count-inprog">0</span> active</span>
+       </div>
+      </summary>
+      <div class="status-controls">
+       <div class="status-actions row">
+        <button class="btn" id="btn-filters-inprog">Filters</button>
+        <span class="grow"></span>
+        <select id="views-inprog"></select>
+        <button class="btn" id="btn-saveview-inprog">Save Query</button>
+        <button class="btn danger" id="btn-delview-inprog">Delete</button>
+       </div>
+       <div class="query-shell" data-query-scope="inprog"></div>
+       <div class="status-search">
+        <input aria-label="Search in progress" data-table-search="#tbl-inprog" placeholder="Search In Progress" type="search"/>
+       </div>
+      </div>
+      <div class="status-table-wrap">
+      <table class="status-table" data-selection-scope="contacts" id="tbl-inprog">
+        <thead>
+         <tr>
+          <th style="width:28px">
+         <input data-role="select-all" id="inprog-all" type="checkbox"/>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="name" type="button">Name <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="stage" type="button">Stage <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="loan" type="button">Loan <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="amount" data-type="number" type="button">Amount <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="rate" data-type="number" type="button">Rate <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="followup" data-type="date" type="button">Next Follow-Up <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="milestone" type="button">Milestone <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="ref" type="button">Referred By <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="last" data-type="date" type="button">Last Contact <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+     </details>
+    <details class="status-panel" data-panel="active">
+     <summary>
+      <div class="status-summary">
+       <div>
+        <strong>Active Pipeline</strong>
+        <div class="status-sub muted">Application, Processing, and Underwriting deals at a glance.</div>
+       </div>
+       <span class="status-count"><span id="count-active">0</span> in flight</span>
+      </div>
+     </summary>
+      <div class="status-controls">
+       <div class="status-actions row wrap">
+        <button class="btn" id="btn-filters-active">Filters</button>
+        <select id="views-active"></select>
+        <button class="btn" id="btn-saveview-active">Save Query</button>
+        <button class="btn danger" id="btn-delview-active">Delete</button>
+        <span class="grow"></span>
+       </div>
+       <div class="query-shell" data-query-scope="active"></div>
+       <div class="status-search">
+        <input aria-label="Search active pipeline" data-table-search="#tbl-status-active" placeholder="Search Active Pipeline" type="search"/>
+       </div>
+      </div>
+     <div class="status-table-wrap">
+      <table class="status-table" data-selection-scope="contacts" id="tbl-status-active">
+       <thead>
+        <tr>
+          <th style="width:28px">
+         <input data-role="select-all" id="status-active-all" type="checkbox"/>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="name" type="button">Name <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="stage" type="button">Stage <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="loan" type="button">Loan <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="amount" data-type="number" type="button">Amount <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="followup" data-type="date" type="button">Next Follow-Up <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="milestone" type="button">Milestone <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+     </details>
+    <details class="status-panel" data-panel="clients">
+     <summary>
+      <div class="status-summary">
+       <div>
+        <strong>Client Stages</strong>
+        <div class="status-sub muted">Approved, CTC, and Funded records ready for follow-through.</div>
+       </div>
+       <span class="status-count"><span id="count-clients">0</span> funded</span>
+      </div>
+     </summary>
+      <div class="status-controls">
+       <div class="status-actions row wrap">
+        <button class="btn" id="btn-filters-clients">Filters</button>
+        <select id="views-clients"></select>
+        <button class="btn" id="btn-saveview-clients">Save Query</button>
+        <button class="btn danger" id="btn-delview-clients">Delete</button>
+        <span class="grow"></span>
+       </div>
+       <div class="query-shell" data-query-scope="clients"></div>
+       <div class="status-search">
+        <input aria-label="Search client stages" data-table-search="#tbl-status-clients" placeholder="Search Client Stages" type="search"/>
+       </div>
+      </div>
+     <div class="status-table-wrap">
+      <table class="status-table" data-selection-scope="contacts" id="tbl-status-clients">
+       <thead>
+        <tr>
+          <th style="width:28px">
+         <input data-role="select-all" id="status-clients-all" type="checkbox"/>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="name" type="button">Name <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="stage" type="button">Stage <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="loan" type="button">Loan <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="amount" data-type="number" type="button">Amount <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="funded" data-type="date" type="button">Funded <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="ref" type="button">Partner <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+     </details>
+    <details class="status-panel" data-panel="longshots">
+     <summary>
+      <div class="status-summary">
+       <div>
+        <strong>Long Shots &amp; Nurture</strong>
+        <div class="status-sub muted">Keep cool leads warm and recycle opportunities.</div>
+       </div>
+       <span class="status-count"><span id="count-longshots">0</span> watching</span>
+      </div>
+     </summary>
+      <div class="status-controls">
+       <div class="status-actions row wrap">
+        <button class="btn" id="btn-filters-statusLongshots">Filters</button>
+        <select id="views-statusLongshots"></select>
+        <button class="btn" id="btn-saveview-statusLongshots">Save Query</button>
+        <button class="btn danger" id="btn-delview-statusLongshots">Delete</button>
+        <span class="grow"></span>
+       </div>
+       <div class="query-shell" data-query-scope="statusLongshots"></div>
+       <div class="status-search">
+        <input aria-label="Search nurture" data-table-search="#tbl-status-longshots" placeholder="Search Long Shots" type="search"/>
+       </div>
+      </div>
+     <div class="status-table-wrap">
+      <table class="status-table" data-selection-scope="contacts" id="tbl-status-longshots">
+       <thead>
+        <tr>
+          <th style="width:28px">
+         <input data-role="select-all" id="status-longshots-all" type="checkbox"/>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="name" type="button">Name <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="loan" type="button">Loan <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="amount" data-type="number" type="button">Amount <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="ref" type="button">Referred By <span aria-hidden="true" class="sort-icon">↕</span></button>
+          </th>
+          <th>
+           <button class="sort-btn" data-key="last" data-type="date" type="button">Last Contact <span aria-hidden="true" class="sort-icon">↕</span></button>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+     </details>
+    </section>
+</main>
+   <!-- PARTNERS -->
+   <main class="hidden" id="view-partners">
+    <section class="card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Partners
+      </strong>
+      <button class="btn brand" id="btn-add-partner">
+       Add Partner
+      </button>
+      <span class="grow">
+      </span>
+      <button class="btn" id="btn-filters-partners">
+       Filters
+      </button>
+     </div>
+     <div class="row query-save-row">
+      <select id="views-partners">
+      </select>
+      <button class="btn" id="btn-saveview-partners">
+       Save Query
+      </button>
+      <button class="btn danger" id="btn-delview-partners">
+       Delete
+      </button>
+     </div>
+     <div class="query-shell" data-query-scope="partners"></div>
+     <div class="table-search">
+      <input aria-label="Search partners" data-table-search="#tbl-partners" placeholder="Search Partners" type="search"/>
+     </div>
+     <table data-selection-scope="partners" id="tbl-partners">
+      <thead>
+       <tr>
+        <th style="width:28px">
+         <input data-role="select-all" id="partners-all" type="checkbox"/>
+        </th>
+        <th>
+         Name
+        </th>
+        <th>
+         Company
+        </th>
+        <th>
+         Email
+        </th>
+        <th>
+         Phone
+        </th>
+        <th>
+         Tier
+        </th>
+       </tr>
+      </thead>
+     <tbody>
+     </tbody>
+    </table>
+   </section>
+  </main>
+   <!-- PIPELINE -->
+   <main class="hidden" id="view-pipeline">
+    <section class="card" id="kanban-card">
+     <div class="row" style="align-items:center;gap:8px;margin-bottom:6px">
+      <h3 style="margin:0">
+       Pipeline Kanban
+      </h3>
+      <span class="muted">
+       Drag contacts across Application → Processing → Underwriting.
+      </span>
+      <span class="grow">
+      </span>
+      <div id="kanban" style="margin:12px 0;"></div>
+      <div class="kanban-controls">
+       <label class="switch">
+        <input id="kb-show-clients" type="checkbox"/>
+        <span class="muted">
+         Show Clients lane
+        </span>
+       </label>
+       <button class="btn" id="kb-reload">
+        Refresh
+       </button>
+      </div>
+     </div>
+     <div class="kanban-wrap" id="kanban-area">
+     </div>
+    </section>
+    <section class="grid cols-2">
+     <div class="card">
+     <h3>
+      Application / Processing / Underwriting
+     </h3>
+     <div class="table-search">
+      <input aria-label="Search pipeline" data-table-search="#tbl-pipeline" placeholder="Search Pipeline" type="search"/>
+     </div>
+     <table data-selection-scope="pipeline" id="tbl-pipeline">
+       <thead>
+        <tr>
+         <th style="width:28px">
+          <input data-role="select-all" id="pipe-all" type="checkbox"/>
+         </th>
+         <th>
+          Name
+         </th>
+         <th>
+          Stage
+         </th>
+         <th>
+          Loan Type
+         </th>
+         <th>
+          Amount
+         </th>
+         <th>
+          Referred By
+         </th>
+        </tr>
+       </thead>
+       <tbody>
+       </tbody>
+      </table>
+     </div>
+     <div class="card">
+     <h3>
+      Clients (Approved / CTC / Funded)
+     </h3>
+     <div class="table-search">
+      <input aria-label="Search clients" data-table-search="#tbl-clients" placeholder="Search Clients" type="search"/>
+     </div>
+     <table data-selection-scope="pipeline" id="tbl-clients">
+       <thead>
+        <tr>
+         <th style="width:28px">
+          <input data-role="select-all" id="clients-all" type="checkbox"/>
+         </th>
+         <th>
+          Name
+         </th>
+         <th>
+          Stage
+         </th>
+         <th>
+          Loan Type
+         </th>
+         <th>
+          Amount
+         </th>
+         <th>
+          Funded
+         </th>
+        </tr>
+       </thead>
+       <tbody>
+       </tbody>
+      </table>
+     </div>
+    </section>
+</main>
+   <!-- TEMPLATES / COMMS (Phase 5) -->
+   <main class="hidden" id="view-templates">
+    <section class="card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Templates &amp; Comms
+      </strong>
+      <span class="badge-pill">
+       Phase 5
+      </span>
+      <span class="grow">
+      </span>
+      <button class="btn" id="btn-add-doc-template">
+       New Doc Template
+      </button>
+      <button class="btn" id="btn-add-msg-template">
+       New Message Template
+      </button>
+      <button class="btn" id="btn-export-templates">
+       Export
+      </button>
+      <button class="btn" id="btn-import-templates">
+       Import
+      </button>
+     </div>
+     <div class="grid cols-2">
+      <div class="card">
+      <h3>
+       Document Templates (per loan type)
+      </h3>
+      <div class="table-search">
+       <input aria-label="Search document templates" data-table-search="#tbl-doc-templates" placeholder="Search Document Templates" type="search"/>
+      </div>
+      <table id="tbl-doc-templates">
+        <thead>
+         <tr>
+          <th>
+           Name
+          </th>
+          <th>
+           Loan Type
+          </th>
+          <th>
+           Items
+          </th>
+          <th>
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+      <div class="card">
+      <h3>
+       Message Templates
+      </h3>
+      <div class="muted" style="margin-top:-6px;margin-bottom:8px">
+       Tokens:
+        <code>
+         {first}
+        </code>
+        <code>
+         {loanType}
+        </code>
+        <code>
+         {missingDocs}
+        </code>
+        <code>
+         {partnerName}
+        </code>
+      </div>
+      <div class="table-search">
+       <input aria-label="Search message templates" data-table-search="#tbl-msg-templates" placeholder="Search Message Templates" type="search"/>
+      </div>
+      <table id="tbl-msg-templates">
+        <thead>
+         <tr>
+          <th>
+           Name
+          </th>
+          <th>
+           Context
+          </th>
+          <th>
+           Preview
+          </th>
+          <th>
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+       </table>
+      </div>
+     </div>
+    </section>
+</main>
+   <!-- Template Editor Modal -->
+   <!-- Compose Modal -->
+   <dialog id="compose-modal">
+    <div class="dlg">
+     <div class="row" style="align-items:center">
+      <h3 style="margin:0">
+       Compose
+      </h3>
+      <span class="grow">
+      </span>
+      <button class="btn" id="btn-compose-close">
+       Close
+      </button>
+     </div>
+     <div class="grid cols-2" style="margin-top:10px">
+      <div>
+       <label>
+        Template
+        <select id="compose-template">
+        </select>
+       </label>
+       <label>
+        To
+        <input id="compose-to" placeholder="contact email or phone"/>
+       </label>
+       <label>
+        Preview
+        <textarea id="compose-preview" readonly=""></textarea>
+       </label>
+      </div>
+      <div>
+       <label>
+        Notes
+        <textarea id="compose-notes"></textarea>
+       </label>
+       <div class="muted">
+        Sends are not implemented; this creates a task and logs activity.
+       </div>
+      </div>
+     </div>
+     <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn brand" id="btn-compose-create">
+       Create Task
+      </button>
+     </div>
+    </div>
+   </dialog>
+   <!-- LONG SHOTS -->
+   <main class="hidden" id="view-longshots">
+    <section class="card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Long Shots
+      </strong>
+      <span class="grow">
+      </span>
+      <button class="btn" id="btn-filters-longshots">
+       Filters
+      </button>
+     </div>
+     <div class="row query-save-row">
+      <select id="views-longshots">
+      </select>
+      <button class="btn" id="btn-saveview-longshots">
+       Save Query
+      </button>
+      <button class="btn danger" id="btn-delview-longshots">
+       Delete
+      </button>
+     </div>
+     <div class="query-shell" data-query-scope="longshots"></div>
+     <table data-selection-scope="pipeline" id="tbl-longshots">
+      <thead>
+       <tr>
+        <th style="width:28px">
+         <input data-role="select-all" id="ls-all" type="checkbox"/>
+        </th>
+        <th>
+         Name
+        </th>
+        <th>
+         Loan Type
+        </th>
+        <th>
+         Amount
+        </th>
+        <th>
+         Referred By
+        </th>
+        <th>
+         Last Activity
+        </th>
+       </tr>
+      </thead>
+      <tbody>
+      </tbody>
+     </table>
+    </section>
+</main>
+   <!-- CALENDAR / REPORTS / COMMISSIONS (stubs wired to data) -->
+   <main class="hidden" id="view-calendar">
+    <section class="card calendar-card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Calendar
+      </strong>
+      <div aria-label="view" class="btn-group" role="group">
+       <button class="btn pill" data-calview="month" type="button">
+        Month
+       </button>
+       <button class="btn pill" data-calview="week" type="button">
+        Week
+       </button>
+       <button class="btn pill" data-calview="day" type="button">
+        Day
+       </button>
+      </div>
+      <div class="row" style="gap:8px;align-items:center">
+       <button class="btn" id="cal-prev" type="button" title="Previous" aria-label="Previous">
+        ◀
+       </button>
+       <button class="btn" id="cal-today" type="button" title="Today" aria-label="Today">
+        Today
+       </button>
+       <button class="btn" id="cal-next" type="button" title="Next" aria-label="Next">
+        ▶
+       </button>
+      </div>
+      <span id="calendar-label" class="muted">
+      </span>
+      <span class="grow">
+      </span>
+      <div class="row" style="gap:8px;align-items:center">
+       <button class="btn" data-act="calendar:export:ics" type="button">
+        Export .ics
+       </button>
+       <button class="btn" id="cal-export" type="button">
+        Export CSV
+       </button>
+      </div>
+     </div>
+     <div class="calendar-legend" id="calendar-legend">
+     </div>
+     <div id="calendar-root" style="min-height:480px">
+     </div>
+    </section>
+   </main>
+   <main class="hidden" id="view-reports">
+    <div class="row" style="align-items:center;gap:12px;margin:12px 0 18px">
+     <button class="pill" id="dash-range">
+      All Time ▾
+     </button>
+     <span class="muted" style="font-size:12px">
+      Applies to portfolio KPIs and insights.
+     </span>
+     <span class="grow">
+     </span>
+    </div>
+    <section class="grid kpi portfolio-kpis">
+     <div class="card">
+      <div class="kval" id="kpi-total">
+       0
+      </div>
+      <div class="muted">
+       Total Contacts
+      </div>
+      <p class="widget-summary muted">How many people are currently tracked in your CRM.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-loanvol">
+       $0
+      </div>
+      <div class="muted">
+       Loan Volume
+      </div>
+      <p class="widget-summary muted">Sum of active loans currently in your pipeline.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-conv">
+       0%
+      </div>
+      <div class="muted">
+       Conversion Rate
+      </div>
+      <p class="widget-summary muted">Share of total contacts that have funded.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-funded">
+       0
+      </div>
+      <div class="muted">
+       Clients Funded
+      </div>
+      <p class="widget-summary muted">Borrowers who have reached the funded stage.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-comm-pipeline">
+       $0
+      </div>
+      <div class="muted">
+       Comm. Pipeline
+      </div>
+      <p class="widget-summary muted">Projected commissions tied to in-flight deals.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-comm-earned">
+       $0
+      </div>
+      <div class="muted">
+       Comm. Earned
+      </div>
+      <p class="widget-summary muted">Estimated commissions earned based on funded loans.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-comm-received">
+       $0
+      </div>
+      <div class="muted">
+       Comm. Received
+      </div>
+      <p class="widget-summary muted">Money marked as received in your commission tracker.</p>
+     </div>
+     <div class="card">
+      <div class="kval" id="kpi-comm-proj">
+       $0
+      </div>
+      <div class="muted">
+       Comm. Projected
+      </div>
+      <p class="widget-summary muted">Future commissions expected from forecasted deals.</p>
+     </div>
+    </section>
+    <section class="card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Client Portfolio &amp; Earnings
+      </strong>
+      <span class="grow">
+      </span>
+      <label>
+       Range
+       <select id="rep-range">
+        <option value="tm">
+         This Month
+        </option>
+        <option value="lm">
+         Last Month
+        </option>
+        <option value="tq">
+         This Quarter
+        </option>
+        <option value="ytd">
+         YTD
+        </option>
+        <option value="all">
+         All
+        </option>
+        <option value="custom">
+         Custom...
+        </option>
+       </select>
+      </label>
+      <label>
+       Start
+       <input disabled="" id="rep-start" type="date"/>
+      </label>
+      <label>
+       End
+       <input disabled="" id="rep-end" type="date"/>
+      </label>
+      <button class="btn" id="rep-apply">
+       Apply
+      </button>
+      <button class="btn" id="rep-export">
+       Export CSV
+      </button>
+     </div>
+     <div class="grid cols-3">
+      <div class="card">
+       <div class="muted">
+        Funded (Count)
+       </div>
+       <div class="kval" id="rep-funded-count">
+        0
+       </div>
+      </div>
+      <div class="card">
+       <div class="muted">
+        Funded Volume
+       </div>
+       <div class="kval" id="rep-funded-sum">
+        $0
+       </div>
+      </div>
+      <div class="card">
+       <div class="muted">
+        Pipeline (Open)
+       </div>
+       <div class="kval" id="rep-pipeline-open">
+        0
+       </div>
+      </div>
+     </div>
+     <section class="card" id="reports-root"></section>
+     <div class="card" style="margin-top:12px">
+     <h3>
+      Funded Deals in Range
+     </h3>
+     <div class="table-search">
+      <input aria-label="Search funded deals" data-table-search="#tbl-funded" placeholder="Search Funded Deals" type="search"/>
+     </div>
+     <table id="tbl-funded">
+       <thead>
+        <tr>
+         <th>
+          Name
+         </th>
+         <th>
+          Loan Type
+         </th>
+         <th>
+          Amount
+         </th>
+         <th>
+          Funded Date
+         </th>
+         <th>
+          Partner
+         </th>
+        </tr>
+       </thead>
+       <tbody>
+       </tbody>
+      </table>
+     </div>
+    </section>
+    <section class="card" id="commissions-summary-card" style="margin-top:12px">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>Commission Snapshot</strong>
+      <label>
+       Month
+       <input id="comm-month" type="month"/>
+      </label>
+      <span class="grow"></span>
+      <button class="btn" id="btn-comm-export">Export CSV</button>
+     </div>
+     <div class="commission-table" id="comm-table"></div>
+    </section>
+    <section class="card" id="commissions-ledger" style="margin-top:12px">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Commissions Ledger
+      </strong>
+      <span class="grow">
+      </span>
+      <label>
+       Range
+       <select id="led-range">
+        <option value="tm">
+         This Month
+        </option>
+        <option value="lm">
+         Last Month
+        </option>
+        <option value="tq">
+         This Quarter
+        </option>
+        <option value="ytd">
+         YTD
+        </option>
+        <option value="all">
+         All
+        </option>
+        <option value="custom">
+         Custom...
+        </option>
+       </select>
+      </label>
+      <label>
+       Start
+       <input disabled="" id="led-start" type="date"/>
+      </label>
+      <label>
+       End
+       <input disabled="" id="led-end" type="date"/>
+      </label>
+      <button class="btn" id="led-apply">
+       Apply
+      </button>
+      <button class="btn" id="led-export">
+       Export CSV
+      </button>
+     </div>
+     <div class="grid cols-2">
+      <div class="card">
+      <h3>
+       Received (funded in range)
+      </h3>
+      <div class="table-search">
+       <input aria-label="Search received ledger" data-table-search="#tbl-ledger-received" placeholder="Search Received" type="search"/>
+      </div>
+      <table id="tbl-ledger-received">
+        <thead>
+         <tr>
+          <th>
+           Paid
+          </th>
+          <th>
+           Name
+          </th>
+          <th>
+           Loan Type
+          </th>
+          <th>
+           Amount
+          </th>
+          <th>
+           Funded
+          </th>
+          <th>
+           Partner
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+        <tfoot>
+         <tr>
+          <td colspan="3">
+           <strong>
+            Totals
+           </strong>
+          </td>
+          <td id="led-rec-sum">
+           $0
+          </td>
+          <td colspan="2">
+          </td>
+         </tr>
+        </tfoot>
+       </table>
+       <div class="muted" style="margin-top:6px">
+        Paid flags stored in Settings (`commissionFlags`).
+       </div>
+      </div>
+      <div class="card">
+      <h3>
+       Projected (open pipeline)
+      </h3>
+      <div class="table-search">
+       <input aria-label="Search projected ledger" data-table-search="#tbl-ledger-projected" placeholder="Search Projected" type="search"/>
+      </div>
+      <table id="tbl-ledger-projected">
+        <thead>
+         <tr>
+          <th>
+           Name
+          </th>
+          <th>
+           Stage
+          </th>
+          <th>
+           Loan Type
+          </th>
+          <th>
+           Amount
+          </th>
+          <th>
+           Partner
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+        </tbody>
+        <tfoot>
+         <tr>
+          <td colspan="3">
+           <strong>
+            Totals
+           </strong>
+          </td>
+          <td id="led-proj-sum">
+           $0
+          </td>
+          <td>
+          </td>
+         </tr>
+        </tfoot>
+       </table>
+      </div>
+     </div>
+    </section>
+</main>
+ <main class="hidden" id="view-workbench">
+  <section class="card" id="workbench-root"></section>
+ </main>
+ <main class="hidden" id="view-notifications">
+  <section class="card" id="notifications-shell">
+   <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+    <strong>Notifications Center</strong>
+    <span class="badge-pill" id="notifications-count-pill" style="display:none"></span>
+    <div class="grow"></div>
+    <button class="btn" id="notifications-export">Export CSV</button>
+   </div>
+   <div class="muted" id="notifications-subhead">Queued notifications respect daily throttles per contact/event.</div>
+   <div id="notif-filters" class="row" style="gap:12px;margin:12px 0;align-items:flex-end"></div>
+   <div id="notif-bulkbar" class="row" style="gap:12px;margin:12px 0;align-items:center"></div>
+   <div id="notif-center-list"></div>
+  </section>
+ </main>
+   <!-- PRINT SUITE (Phase 8) -->
+   <main class="hidden" id="view-print">
+    <section class="card">
+     <div class="row" style="align-items:center;gap:12px;margin-bottom:8px">
+      <strong>
+       Print Suite
+      </strong>
+      <span class="badge-pill">
+       Phase 8
+      </span>
+      <span class="grow">
+      </span>
+      <label>
+       Type
+       <select id="print-type">
+        <option value="birthdays">
+         Birthdays
+        </option>
+        <option value="anniversaries">
+         Anniversaries
+        </option>
+        <option value="both">
+         Both
+        </option>
+       </select>
+      </label>
+      <label>
+       Range
+       <select id="print-range">
+        <option value="month">
+         This Month
+        </option>
+        <option value="next30">
+         Next 30 Days
+        </option>
+        <option value="all">
+         All
+        </option>
+       </select>
+      </label>
+      <label>
+       Cards/Row
+       <select id="print-cols">
+        <option>
+         1
+        </option>
+        <option>
+         2
+        </option>
+        <option selected="">
+         3
+        </option>
+        <option>
+         4
+        </option>
+       </select>
+      </label>
+      <label class="switch">
+       <input id="print-address" type="checkbox"/>
+       <span>
+        Include Address
+       </span>
+      </label>
+      <button class="btn" id="btn-print-generate">
+       Generate
+      </button>
+      <button class="btn brand" id="btn-print">
+       Print
+      </button>
+     </div>
+     <div class="muted" id="print-summary" style="margin-bottom:8px">
+      —
+     </div>
+     <div class="print-grid" id="print-area">
+     </div>
+    </section>
+</main>
+ 
+  <!-- SETTINGS -->
+  <main class="hidden" id="view-settings">
+   <div class="settings-shell">
+    <nav aria-label="Settings sections" class="settings-nav" id="settings-nav">
+     <button class="btn active" data-panel="general">General</button>
+     <button class="btn" data-panel="data">Data Tools</button>
+     <button class="btn" data-panel="automation">Automation</button>
+     <button class="btn" data-panel="dashboard">Dashboard</button>
+     <button class="btn" data-panel="goals">Goals</button>
+     <button class="btn" data-panel="profile">Profile</button>
+     <button class="btn" data-panel="signatures">Signatures</button>
+    </nav>
+    <div class="settings-panels">
+     <section class="settings-panel active" data-panel="general">
+      <header class="panel-head">
+       <h2>General</h2>
+       <p class="muted">Configure personal preferences and system maintenance.</p>
+      </header>
+      <div class="settings-panel-grid">
+       <div class="card">
+        <h3>Preferences</h3>
+        <p class="widget-summary muted">Adjust your display and background automation defaults.</p>
+        <label class="switch">
+         <input id="toggle-dark" type="checkbox"/>
+         <span>Dark Mode</span>
+        </label>
+        <label class="switch">
+         <input checked="" id="toggle-autobackup" type="checkbox"/>
+         <span>Auto Backup on Close</span>
+        </label>
+       </div>
+       <div class="card">
+        <h3>Maintenance</h3>
+        <p class="widget-summary muted">Housekeeping actions that affect the entire workspace.</p>
+        <button class="btn danger" id="btn-delete-all">Delete All Local Data</button>
+        <div class="row" style="margin-top:8px;gap:8px">
+         <button class="btn" id="btn-load-demo">Load Demo Data</button>
+         <button class="btn" id="btn-run-qa">Run QA Sweep</button>
+        </div>
+       </div>
+       <div class="card">
+        <h3>QA Panel</h3>
+        <p class="widget-summary muted">View diagnostics produced by the self-test suite.</p>
+        <div class="muted" id="qa-output">—</div>
+       </div>
+      </div>
+     </section>
+    <section class="settings-panel" data-panel="data">
+     <header class="panel-head">
+      <h2>Data Tools</h2>
+      <p class="muted">Inspect health of imported extras and manage workspace snapshots.</p>
+     </header>
+     <div class="settings-panel-grid">
+      <div class="card">
+       <h3>Data Health</h3>
+       <p class="widget-summary muted">Quick look at detected extras after an import.</p>
+       <div class="muted" id="extras-registry">Extras registry will appear after an import.</div>
+      </div>
+      <div class="card" id="local-utilities-card">
+       <h3>Local Utilities</h3>
+       <p class="widget-summary muted">Run imports, exports, demo seeds, and diagnostics without leaving your browser.</p>
+       <div class="local-utilities-grid">
+        <section class="utility-block">
+         <h4>Workspace Snapshots</h4>
+         <p class="muted fine-print">Create a full backup or load a snapshot generated by THE CRM Tool.</p>
+         <div class="utility-row">
+          <button class="btn brand" id="btn-export-json">Export Workspace</button>
+          <button class="btn warn" id="btn-import-json">Import Workspace</button>
+         </div>
+         <p class="muted fine-print">Imports support merge or replace modes and overwrite only when you confirm.</p>
+        </section>
+        <section class="utility-block">
+         <h4>Productivity Helpers</h4>
+         <div class="utility-grid">
+          <button class="btn brand" id="btn-csv-import">CSV Import</button>
+          <button class="btn" id="btn-selftest">Self-Test</button>
+          <button class="btn" id="btn-export-ics-dashboard">Export Dashboard .ics</button>
+         </div>
+         <form class="seed-demo-form" id="seed-demo-form" style="margin-top:12px;display:grid;gap:12px">
+          <h5 class="muted" style="margin:0">Seed Demo Data</h5>
+          <div class="grid cols-2" style="gap:12px">
+           <label>
+            Count
+            <input id="seed-count" min="1" value="60" type="number"/>
+           </label>
+           <label class="switch" style="margin-top:18px">
+            <input checked="" id="seed-include-celebrations" type="checkbox"/>
+            <span>Include birthdays &amp; anniversaries</span>
+           </label>
+          </div>
+          <fieldset style="border:1px solid var(--border-subtle, #d9d9d9);border-radius:8px;padding:12px">
+           <legend class="muted" style="font-size:0.85rem;padding:0 6px">Stages</legend>
+           <div class="grid cols-2" style="gap:6px 16px">
+            <label><input checked="" name="seed-stage" type="checkbox" value="application"/> Application</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="preapproved"/> Pre-Approved</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="processing"/> Processing</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="underwriting"/> Underwriting</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="approved"/> Approved</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="cleared-to-close"/> CTC</label>
+            <label><input checked="" name="seed-stage" type="checkbox" value="funded"/> Funded</label>
+           </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--border-subtle, #d9d9d9);border-radius:8px;padding:12px">
+           <legend class="muted" style="font-size:0.85rem;padding:0 6px">Loan Types</legend>
+           <div class="grid cols-2" style="gap:6px 16px">
+            <label><input checked="" name="seed-loan" type="checkbox" value="Conventional"/> Conventional</label>
+            <label><input checked="" name="seed-loan" type="checkbox" value="FHA"/> FHA</label>
+            <label><input checked="" name="seed-loan" type="checkbox" value="VA"/> VA</label>
+            <label><input checked="" name="seed-loan" type="checkbox" value="Jumbo"/> Jumbo</label>
+           </div>
+          </fieldset>
+          <fieldset style="border:1px solid var(--border-subtle, #d9d9d9);border-radius:8px;padding:12px">
+           <legend class="muted" style="font-size:0.85rem;padding:0 6px">Partner Assignments</legend>
+           <div class="grid cols-2" style="gap:6px 16px">
+            <label><input checked="" id="seed-partner-buyer" type="checkbox"/> Include buyer partners</label>
+            <label><input checked="" id="seed-partner-listing" type="checkbox"/> Include listing partners</label>
+           </div>
+           <p class="muted fine-print" style="margin-top:8px">Unselected partner roles default to None.</p>
+          </fieldset>
+          <div class="row" style="justify-content:flex-end">
+           <button class="btn brand" id="btn-seed-data" type="submit">Seed Demo Data</button>
+          </div>
+         </form>
+        </section>
+        <section class="utility-block">
+         <h4>Blank Templates</h4>
+         <div class="row utility-template-row">
+          <label class="muted" for="csv-template-kind" style="margin:0">Blank CSV Template</label>
+          <select id="csv-template-kind">
+           <option value="contacts">Contacts</option>
+           <option value="partners">Partners</option>
+          </select>
+          <button class="btn" id="btn-download-csv-template">Download</button>
+         </div>
+        </section>
+       </div>
+      </div>
+     </div>
+    </section>
+    <section class="settings-panel" data-panel="automation">
+      <header class="panel-head">
+       <h2>Automation</h2>
+       <p class="muted">Fine-tune document rules, notifications, and outreach templates.</p>
+      </header>
+      <div class="settings-panel-grid" id="settings-automation-grid"></div>
+     </section>
+    <section class="settings-panel" data-panel="dashboard">
+     <header class="panel-head">
+      <h2>Dashboard</h2>
+      <p class="muted">Choose which widgets appear when viewing the full dashboard.</p>
+     </header>
+     <div class="settings-panel-grid">
+      <div class="card">
+       <h3>Widget Visibility</h3>
+       <p class="widget-summary muted">Toggle sections on or off for the All view.</p>
+       <div class="settings-toggle-list" id="dashboard-widget-list"></div>
+      </div>
+      <div class="card">
+       <h3>Focus Mode</h3>
+       <p class="widget-summary muted">Switch between Today and All directly from the dashboard header. Your last choice is saved on this device.</p>
+      </div>
+     </div>
+    </section>
+    <section class="settings-panel" data-panel="goals">
+      <header class="panel-head">
+       <h2>Goals</h2>
+       <p class="muted">Set the production targets that power the dashboard goal tracker.</p>
+      </header>
+      <div class="settings-panel-grid">
+       <section class="card" id="goal-settings-card">
+        <div class="row" style="justify-content:space-between;align-items:center">
+         <strong>Dashboard Goals</strong>
+         <button class="btn brand" id="btn-goals-save">Save Goals</button>
+        </div>
+        <p class="widget-summary muted">Track monthly progress toward funded loans and volume targets.</p>
+        <div class="grid cols-2" style="margin-top:8px">
+         <label>
+          Monthly Funded Loans Goal
+          <input id="goal-funded" min="0" placeholder="e.g., 12" type="number"/>
+         </label>
+         <label>
+          Monthly Loan Volume Goal ($)
+          <input id="goal-volume" min="0" placeholder="e.g., 2500000" type="number"/>
+         </label>
+        </div>
+        <p class="muted" style="margin-top:8px">Goals reset each month and update the dashboard widget instantly after saving.</p>
+       </section>
+      </div>
+     </section>
+     <section class="settings-panel" data-panel="profile">
+      <header class="panel-head">
+       <h2>Profile</h2>
+       <p class="muted">Keep your contact details in sync for mail merges and outreach.</p>
+      </header>
+      <div class="settings-panel-grid">
+       <section class="card" id="lo-profile-settings">
+        <div class="row" style="justify-content:space-between;align-items:center">
+         <strong>Loan Officer Profile</strong>
+         <button class="btn" id="btn-lo-save">Save</button>
+        </div>
+        <p class="widget-summary muted">These values power templates, emails, and shared signatures.</p>
+        <div class="grid cols-2" style="margin-top:8px">
+         <label>
+          Name
+          <input id="lo-name" placeholder="e.g., Alex Morgan"/>
+         </label>
+         <label>
+          Email
+          <input id="lo-email" placeholder="e.g., alex@lender.com"/>
+         </label>
+         <label>
+          Phone
+          <input id="lo-phone" placeholder="e.g., (555) 123-4567"/>
+         </label>
+         <label>
+          Signature
+          <textarea id="lo-signature" placeholder="Footer / signature block" rows="3"></textarea>
+         </label>
+        </div>
+       </section>
+      </div>
+     </section>
+     <section class="settings-panel" data-panel="signatures">
+      <header class="panel-head">
+       <h2>Signatures</h2>
+       <p class="muted">Manage reusable sign-offs for messaging templates.</p>
+      </header>
+      <div class="settings-panel-grid">
+       <section class="card" id="signatures-editor">
+        <div class="row" style="justify-content:space-between;align-items:center">
+         <strong>Signatures</strong>
+         <div>
+          <button class="btn" id="btn-sig-add">Add</button>
+         </div>
+        </div>
+        <p class="widget-summary muted">Store multiple signatures and choose a default per channel.</p>
+        <table class="table" id="sig-table">
+         <thead>
+          <tr>
+           <th style="width:34px">Default</th>
+           <th style="width:180px">Title</th>
+           <th>Signature Body</th>
+           <th style="width:160px">Actions</th>
+          </tr>
+         </thead>
+         <tbody>
+         </tbody>
+        </table>
+        <div class="muted" style="margin-top:6px">Placeholders supported: {loName} {loEmail} {loPhone}</div>
+       </section>
+      </div>
+     </section>
+    </div>
+   </div>
+   <dialog id="template-editor">
+    <div class="dlg">
+     <div class="row" style="align-items:center">
+      <h3 id="tmpl-title" style="margin:0">Template</h3>
+      <span class="grow"></span>
+      <button class="btn" id="btn-tmpl-close">Close</button>
+     </div>
+     <div class="grid cols-2" style="margin-top:10px">
+      <div>
+       <label>
+        Name
+        <input id="tmpl-name"/>
+       </label>
+      </div>
+      <div>
+       <label>
+        Loan Type
+        <select id="tmpl-loanType">
+         <option>Conventional</option>
+         <option>FHA</option>
+         <option>VA</option>
+         <option>Jumbo</option>
+         <option>USDA</option>
+        </select>
+       </label>
+      </div>
+      <div class="grid cols-2" style="grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+       <div class="muted" style="grid-column:span 4">Insert tokens</div>
+       <button class="btn pill" data-token="{first}">{first}</button>
+       <button class="btn pill" data-token="{last}">{last}</button>
+       <button class="btn pill" data-token="{loanType}">{loanType}</button>
+       <button class="btn pill" data-token="{amount}">{amount}</button>
+       <button class="btn pill" data-token="{closeDate}">{closeDate}</button>
+       <button class="btn pill" data-token="{due}">{due}</button>
+       <button class="btn pill" data-token="{missingDocs}">{missingDocs}</button>
+       <button class="btn pill" data-token="{partnerName}">{partnerName}</button>
+       <span class="muted" style="margin-left:8px">Also supports {{double‑braces}}</span>
+      </div>
+      <!-- textarea id moved after palette for insertion handling -->
+      <textarea id="tmpl-body" placeholder="Hi {first}, we still need: {missingDocs}..."></textarea>
+     </div>
+     <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="btn danger" id="btn-tmpl-delete">Delete</button>
+      <button class="btn brand" id="btn-tmpl-save">Save</button>
+     </div>
+    </div>
+   </dialog>
+   <aside class="legend" id="calendar-legend-secondary"></aside>
+  </main>
+</main>
+  </div>
+  <!-- Floating Action Bar -->
+  <div class="actionbar" id="actionbar">
+   <div class="container actionbar-shell">
+    <div class="actionbar-meta">
+     <div class="actionbar-count" data-role="count">
+      No records selected
+     </div>
+     <div class="actionbar-breakdown" data-role="breakdown">
+      Select rows to unlock pipeline actions.
+     </div>
+     <div class="actionbar-metric" data-role="amount">
+     </div>
+    </div>
+    <div class="actionbar-stages" data-role="stages">
+    </div>
+    <div class="actionbar-names" data-role="names">
+     No contacts or partners in focus yet.
+    </div>
+    <div class="actionbar-actions">
+     <button class="btn" data-act="edit">
+      Edit
+     </button>
+     <button class="btn" data-act="merge">
+      Merge (2)
+     </button>
+     <button class="btn" data-act="emailTogether">
+      Email Together
+     </button>
+     <button class="btn" data-act="emailMass">
+      Email Mass (copy)
+     </button>
+     <button class="btn" data-act="task">
+      Add Task
+     </button>
+     <button class="btn" data-act="bulkLog">
+      Bulk Log
+     </button>
+     <button class="btn" data-act="clear">
+      Clear
+     </button>
+     <button class="btn danger" data-act="delete">
+      Delete
+     </button>
+    </div>
+   </div>
+  </div>
+  <!-- Partner Modal -->
+  <dialog class="record-modal" id="partner-modal">
+   <div class="dlg" tabindex="-1">
+    <form class="modal-form-shell" id="partner-form">
+     <div class="modal-header">
+      <h3 class="grow" id="partner-title">
+       Add / Edit Partner
+      </h3>
+      <button class="btn" data-close-partner="" type="button">
+       Close
+      </button>
+     </div>
+     <div class="dialog-scroll">
+      <div class="modal-body">
+       <div class="modal-form-layout">
+        <aside class="modal-summary" id="partner-summary">
+         <div class="summary-name" id="p-summary-name">
+          New Partner
+         </div>
+         <div class="summary-meta">
+          <span class="summary-chip" id="p-summary-tier">
+           Tier — Developing
+          </span>
+          <span class="summary-chip" id="p-summary-type">
+           Realtor Partner
+          </span>
+         </div>
+         <div class="summary-metrics">
+         <div class="summary-metric">
+           <span class="metric-label">
+            Primary Focus
+           </span>
+           <span class="metric-value" id="p-summary-focus">
+            —
+           </span>
+          </div>
+          <div class="summary-metric">
+           <span class="metric-label">
+            Cadence
+           </span>
+           <span class="metric-value" id="p-summary-cadence">
+            —
+           </span>
+          </div>
+          <div class="summary-metric">
+           <span class="metric-label">
+            Active Borrowers
+           </span>
+           <span class="metric-value" id="p-summary-linked">
+            —
+           </span>
+          </div>
+         </div>
+         <div class="modal-note" id="p-summary-note">
+          Keep this partner nurtured with intentional follow-up and co-branded touchpoints.
+         </div>
+        </aside>
+        <div class="modal-main">
+         <nav class="modal-tabs" id="partner-tabs">
+          <button class="btn active" data-panel="overview" type="button">Overview</button>
+          <button class="btn" data-panel="contact" type="button">Contact</button>
+          <button class="btn" data-panel="alignment" type="button">Engagement</button>
+          <button class="btn" data-panel="linked" type="button">Linked Customers</button>
+         </nav>
+         <div class="modal-panels">
+          <section class="modal-section modal-panel partner-panel active" data-panel="overview">
+           <h4>
+            Relationship Overview
+           </h4>
+           <div class="field-grid cols-2">
+            <label>
+             Partner Name
+             <input id="p-name" placeholder="Full name"/>
+            </label>
+            <label>
+             Company / Team
+             <input id="p-company" placeholder="Brand or affiliation"/>
+            </label>
+            <label>
+             Partner Type
+             <select id="p-type">
+              <option value="Realtor Partner">Realtor Partner</option>
+              <option value="Builder">Builder</option>
+              <option value="Financial Advisor">Financial Advisor</option>
+              <option value="CPA">CPA</option>
+              <option value="Attorney">Attorney</option>
+              <option value="Insurance">Insurance</option>
+              <option value="Home Services">Home Services</option>
+              <option value="Other">Other</option>
+             </select>
+            </label>
+            <label>
+             Tier
+             <select id="p-tier">
+              <option value="Top">Top</option>
+              <option value="Core">Core</option>
+              <option value="Developing">Developing</option>
+              <option value="Keep in Touch">Keep in Touch</option>
+             </select>
+            </label>
+            <label>
+             Primary Market Focus
+             <select id="p-focus">
+              <option value="Purchase">Purchase</option>
+              <option value="Listing">Listing</option>
+              <option value="First-Time Buyers">First-Time Buyers</option>
+              <option value="Move-Up Buyers">Move-Up Buyers</option>
+              <option value="Luxury">Luxury</option>
+              <option value="Investors">Investors</option>
+              <option value="New Construction">New Construction</option>
+              <option value="Referral Network">Referral Network</option>
+             </select>
+            </label>
+            <label>
+             Relationship Priority
+             <select id="p-priority">
+              <option value="Strategic">Strategic</option>
+              <option value="Core">Core</option>
+              <option value="Emerging">Emerging</option>
+              <option value="Watchlist">Watchlist</option>
+             </select>
+            </label>
+           </div>
+          </section>
+          <section class="modal-section modal-panel partner-panel" data-panel="contact">
+           <h4>
+            Contact Details
+           </h4>
+           <div class="field-grid cols-2">
+            <label>
+             Email
+             <input id="p-email" placeholder="name@company.com" type="email"/>
+            </label>
+            <label>
+             Mobile / Direct Line
+             <input id="p-phone" placeholder="(555) 000-0000" type="tel"/>
+            </label>
+            <label>
+             Preferred Contact Method
+             <select id="p-pref">
+              <option value="Phone">Phone</option>
+              <option value="Text">Text</option>
+              <option value="Email">Email</option>
+              <option value="Video">Video Call</option>
+              <option value="In Person">In Person</option>
+             </select>
+            </label>
+            <label>
+             Communication Cadence
+             <select id="p-cadence">
+              <option value="Weekly">Weekly</option>
+              <option value="Bi-Weekly">Bi-Weekly</option>
+              <option value="Monthly">Monthly</option>
+              <option value="Quarterly">Quarterly</option>
+              <option value="As Needed">As Needed</option>
+             </select>
+            </label>
+           </div>
+           <div class="field-grid cols-2" style="margin-top:12px">
+            <label>
+             Office Address
+             <input id="p-address" placeholder="Street"/>
+            </label>
+            <label>
+             City
+             <input id="p-city" placeholder="City"/>
+            </label>
+            <label>
+             State
+             <select id="p-state"></select>
+            </label>
+            <label>
+             ZIP
+             <input id="p-zip" placeholder="Postal"/>
+            </label>
+           </div>
+          </section>
+          <section class="modal-section modal-panel partner-panel" data-panel="alignment">
+           <h4>
+            Pipeline Alignment
+           </h4>
+           <div class="field-grid cols-3">
+            <label>
+             Referral Volume
+             <select id="p-volume">
+              <option value="1-2 / quarter">1-2 / quarter</option>
+              <option value="1-2 / month">1-2 / month</option>
+              <option value="3-5 / month">3-5 / month</option>
+              <option value="6+ / month">6+ / month</option>
+              <option value="Project-Based">Project-Based</option>
+             </select>
+            </label>
+            <label>
+             Last Touch
+             <input id="p-lasttouch" type="date"/>
+            </label>
+            <label>
+             Next Planned Touch
+             <input id="p-nexttouch" type="date"/>
+            </label>
+           </div>
+           <div class="field-grid cols-2" style="margin-top:12px">
+            <label>
+             Relationship Owner
+             <input id="p-owner" placeholder="Primary LO or team member"/>
+            </label>
+            <label>
+             Collaboration Focus
+             <select id="p-collab">
+              <option value="Open Houses">Open Houses</option>
+              <option value="Buyer Education">Buyer Education</option>
+              <option value="Co-Marketing">Co-Marketing</option>
+              <option value="Events">Events</option>
+              <option value="Digital Campaigns">Digital Campaigns</option>
+              <option value="Lead Sharing">Lead Sharing</option>
+              <option value="New Construction">New Construction</option>
+              <option value="Other">Other</option>
+             </select>
+            </label>
+           </div>
+           <label class="section-subhead" style="margin-top:14px">
+            Success Plan & Notes
+           </label>
+           <textarea id="p-notes" placeholder="Outline co-marketing plans, event commitments, and next steps."></textarea>
+          </section>
+          <section class="modal-section modal-panel partner-panel" data-panel="linked">
+           <h4>
+            Linked Customers
+           </h4>
+           <div class="linked-summary muted" id="partner-linked-summary">
+            No linked customers yet.
+           </div>
+           <div class="linked-customers" id="partner-linked">
+            <div class="linked-empty muted">
+             Save activity with this partner to see connected borrowers and deals.
+            </div>
+           </div>
+          </section>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+     <div class="modal-footer" data-form-footer="partner">
+      <button class="btn" data-close type="button">
+       Cancel
+      </button>
+      <button class="btn brand" id="p-save" type="button">
+       Save Partner
+      </button>
+     </div>
+    </form>
+   </div>
+  </dialog>
+  <!-- Contact Modal placeholder -->
+  <dialog class="record-modal" id="contact-modal" style="display:none">
+   <div class="dlg" tabindex="-1">
+    <form class="modal-form-shell" id="contact-form" method="dialog">
+     <div class="modal-header">
+      <strong class="grow">
+       Add / Edit Contact
+      </strong>
+      <button class="btn" data-close="" type="button">
+       Close
+      </button>
+     </div>
+     <div class="dialog-scroll">
+      <div class="modal-body" id="contact-modal-body">
+      </div>
+     </div>
+     <div class="modal-footer" data-form-footer="contact">
+      <button class="btn" data-close type="button">
+       Cancel
+      </button>
+      <button class="btn brand" id="btn-save-contact" type="button" value="default">
+       Save Contact
+      </button>
+     </div>
+    </form>
+   </div>
+  </dialog>
+  <dialog id="partner-profile-modal"></dialog>
+  <div class="toast" id="toast">
+  </div>
+  <!-- Filters Modal (Phase 7) -->
+  <dialog id="import-workspace-dialog">
+   <div class="dlg import-dialog">
+    <div class="row" style="align-items:center">
+     <h3 style="margin:0">Import Workspace</h3>
+     <span class="grow"></span>
+     <button class="btn" id="import-dialog-close" type="button">Close</button>
+    </div>
+    <p class="muted">Load a JSON snapshot created by THE CRM Tool and decide whether to merge with or replace existing records.</p>
+    <fieldset class="import-mode-group">
+     <legend class="muted">Restore mode</legend>
+     <label class="switch">
+      <input checked="" name="import-mode" type="radio" value="merge"/>
+      <span>Merge (keep newer local records)</span>
+     </label>
+     <br/>
+     <label class="switch">
+      <input name="import-mode" type="radio" value="replace"/>
+      <span>Replace (wipe then load snapshot)</span>
+     </label>
+    </fieldset>
+    <div class="import-file-row">
+     <button class="btn" id="import-dialog-choose" type="button">Choose File</button>
+     <span class="muted" id="import-dialog-filename">No file selected.</span>
+    </div>
+    <p class="muted fine-print">Snapshots stay on this device only. Large imports may take a few moments.</p>
+    <input accept="application/json" class="hidden" id="import-json-input" type="file"/>
+    <div class="row import-dialog-footer">
+     <span class="grow"></span>
+     <button class="btn" id="import-dialog-cancel" type="button">Cancel</button>
+     <button class="btn brand" id="import-dialog-import" type="button">Import Snapshot</button>
+    </div>
+   </div>
+  </dialog>
+  <dialog id="filters-modal">
+   <div class="dlg filters-modal-shell">
+    <div class="filters-header row">
+     <div>
+      <h3 style="margin:0">Filters</h3>
+      <div class="muted" id="filters-scope-label"></div>
+     </div>
+     <span class="grow"></span>
+     <button class="btn" id="btn-filters-close">Close</button>
+    </div>
+    <div class="filters-body">
+      <aside class="filters-summary" id="filters-summary"></aside>
+      <div class="filters-content" id="filters-content"></div>
+    </div>
+    <div class="row filters-footer">
+     <span class="grow"></span>
+     <button class="btn" id="btn-filters-clear">Clear</button>
+     <button class="btn brand" id="btn-filters-apply">Apply</button>
+    </div>
+   </div>
+  </dialog>
+
+  <script>
+   (function(){
+    const globalScope = typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : null);
+    if (!globalScope || globalScope.__APP_DATA_QUEUE_BRIDGE__) return;
+    globalScope.__APP_DATA_QUEUE_BRIDGE__ = true;
+
+    const queue = [];
+    let activeHandler = null;
+    let previousHandler = null;
+    let bootResolved = false;
+
+    function cloneDetail(detail){
+     if (!detail || typeof detail !== "object") return detail;
+     try {
+      return JSON.parse(JSON.stringify(detail));
+     } catch (_err) {
+      if (Array.isArray(detail)) return detail.slice();
+      return Object.assign({}, detail);
+     }
+    }
+
+    function flushQueue(){
+     if (!activeHandler || !bootResolved || !queue.length) return;
+     const pending = queue.splice(0, queue.length);
+     pending.forEach((entry) => {
+      try {
+       activeHandler(entry);
+      } catch (err) {
+       try { console.error("[boot] queued app:data dispatch failed", err); }
+       catch (_) {}
+      }
+     });
+    }
+
+    function isStubLike(fn){
+     return !fn || fn === stub || !!fn.__appDataQueueStub;
+    }
+
+    function resolvesViaStub(fn){
+     return !!(fn && fn.__appDataQueueDependsOnStub);
+    }
+
+    function pickResolvedHandler(){
+     let handler = activeHandler;
+     if (isStubLike(handler)) {
+      handler = (previousHandler && previousHandler !== handler && !isStubLike(previousHandler)) ? previousHandler : null;
+     } else if (resolvesViaStub(handler) && previousHandler && previousHandler !== handler && !isStubLike(previousHandler)) {
+      handler = previousHandler;
+     }
+     return handler && !isStubLike(handler) ? handler : null;
+    }
+
+    let stubDispatchDepth = 0;
+
+    function stub(detail){
+     if (bootResolved) {
+      const target = pickResolvedHandler();
+      if (!target) return undefined;
+      if (!resolvesViaStub(target)) return target(detail);
+      if (stubDispatchDepth > 0) return undefined;
+      stubDispatchDepth++;
+      try {
+       return target(detail);
+      } finally {
+       stubDispatchDepth--;
+      }
+     }
+     queue.push(cloneDetail(detail));
+     return undefined;
+    }
+    stub.__appDataQueueStub = true;
+
+    Object.defineProperty(globalScope, "dispatchAppDataChanged", {
+     configurable: true,
+     enumerable: false,
+     get(){
+      return (bootResolved && activeHandler) ? activeHandler : stub;
+     },
+     set(fn){
+      if (fn && fn.__appDataQueueStub) return;
+      const nextHandler = typeof fn === "function" ? fn : null;
+      if (activeHandler && activeHandler !== stub) {
+       previousHandler = activeHandler;
+      }
+      activeHandler = nextHandler;
+      flushQueue();
+     }
+    });
+
+    function markBootResolved(){
+     bootResolved = true;
+     flushQueue();
+    }
+
+    (function wireBootPromiseBridge(){
+     const existing = Object.getOwnPropertyDescriptor(globalScope, "__BOOT_LOADER_MAIN__");
+     if (existing && existing.configurable === false && existing.set == null) {
+      const value = existing.value;
+      if (value && typeof value.then === "function") {
+       value.then(markBootResolved, markBootResolved);
+      } else {
+       markBootResolved();
+      }
+      return;
+     }
+     let stored = existing ? existing.value : undefined;
+     Object.defineProperty(globalScope, "__BOOT_LOADER_MAIN__", {
+      configurable: true,
+      enumerable: false,
+      get(){
+       return stored;
+      },
+      set(value){
+       stored = value;
+       if (value && typeof value.then === "function") {
+        value.then(markBootResolved, markBootResolved);
+       } else {
+        markBootResolved();
+       }
+      }
+     });
+     if (stored && typeof stored.then === "function") {
+      stored.then(markBootResolved, markBootResolved);
+     } else if (stored) {
+      markBootResolved();
+     }
+    })();
+
+    globalScope.__drainAppDataQueue__ = () => { markBootResolved(); };
+   })();
+  </script>
+
+  <script src="seed_data_inline.js"></script>
+  <script src="seed_test_data.js"></script>
+
+  <script>window.__APP_VERSION__='v2025.09.27';window.__INIT_FLAGS__=window.__INIT_FLAGS__||{};window.__PATCHES_LOADED__=[];</script>
+  <script type="module" src="js/patches/loader.js"></script>
+  <script>
+    window.addEventListener('load', function(){
+      if(!Array.isArray(window.__PATCHES_LOADED__) || window.__PATCHES_LOADED__.length === 0){
+        console.warn('Boot warning: no patches loaded. Check console for boot diagnostics.');
+      }
+    });
+  </script>
+  <script>
+    if (location.protocol === 'file:') {
+      document.documentElement.innerHTML =
+        '<div style="font:16px system-ui;padding:24px">This app can’t run from <code>file://</code>.<br>Close this tab and double-click <b>Start-CRM.bat</b>.</div>';
+    }
+  </script>
+</body>
+</html>
