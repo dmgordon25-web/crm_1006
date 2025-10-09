@@ -102,11 +102,12 @@ function DumpDom([string]$target,[int]$budgetMs,[ref]$stdout,[ref]$stderr){
   } else {
     $escape = {
       param([string]$value)
-      if([string]::IsNullOrEmpty($value)){ return '""' }
+      $quote = [char]34
+      if([string]::IsNullOrEmpty($value)){ return "$quote$quote" }
       if($value -notmatch '[\s"]'){ return $value }
       $escaped = $value -replace '(\\*)"', '$1$1"'
       $escaped = $escaped -replace '(\\+)$', '$1$1'
-      return '"' + $escaped + '"'
+      return "$quote$escaped$quote"
     }
     $escapedArgs = $args | ForEach-Object { & $escape $_ }
     $psi.Arguments = [string]::Join(' ', $escapedArgs)
