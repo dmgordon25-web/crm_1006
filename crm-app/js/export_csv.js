@@ -249,11 +249,18 @@
     return '\uFEFF' + lines.join('\r\n');
   }
 
+  const DEFAULT_SELECTION_KIND = 'contacts';
+
   async function onExport(ev) {
     ev?.preventDefault?.();
     const selection = getSelectionSnapshot();
     const selectionKind = normalizeDataset(selection?.type);
-    const kind = selectionKind || inferDataset();
+    const hasExplicitSelection = Array.isArray(selection?.ids) && selection.ids.length > 0;
+    const kind = hasExplicitSelection
+      ? selectionKind || inferDataset()
+      : selectionKind && selectionKind !== DEFAULT_SELECTION_KIND
+        ? selectionKind
+        : inferDataset();
     try {
       const rows = await pullRows(kind);
       const filtered = filterRowsBySelection(rows, kind, selection);
