@@ -1,0 +1,8 @@
+{
+  "selectors": [
+    { "mustContain": "view-dashboard" },
+    { "mustContain": "view-partners" },
+    { "mustContain": "view-longshots" },
+    { "mustContain": "view-calendar" }
+  ]
+}
