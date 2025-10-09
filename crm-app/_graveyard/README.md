@@ -1,11 +1,6 @@
-# Quarantined Files (2024-05-26)
+# Graveyard (Quarantine)
+This folder holds files removed from active source to reduce noise. They remain available for reference and optional loading.
 
-- `js/_legacy/patch_2025-09-27_workbench.js` → `_graveyard/js/_legacy/patch_2025-09-27_workbench.js` — Referenced only by legacy self-test hooks.
-- `js/store/db_core.js` → `_graveyard/js/store/db_core.js` — Imported exclusively by legacy workbench patch.
-- `js/ui/FormFooter.tsx` → `_graveyard/js/ui/FormFooter.tsx` — TypeScript variant unused by runtime; JS version is active.
-- `js/ui/GhostButton.tsx` → `_graveyard/js/ui/GhostButton.tsx` — TypeScript variant unused; JS counterpart covers runtime.
-- `js/ui/PrimaryButton.tsx` → `_graveyard/js/ui/PrimaryButton.tsx` — TypeScript variant unused; JS counterpart covers runtime.
-- `js/ui/strings.ts` → `_graveyard/js/ui/strings.ts` — No inbound references; JS module supplies strings.
-- `js/views/data_tables.js` → `_graveyard/js/views/data_tables.js` — No inbound references in active code.
-
-These files had no live inbound references at time of move. Restore by moving back to original path if required.
+Conventions:
+- `legacy_patches/patch_*.js`: Original patch files, physically moved here. A **shim** remains under `crm-app/js/patch_*.js` that side-effect imports the moved file so `?patches=on` still works.
+- `orphans/...`: Orphan files not referenced by the app. When in doubt, a stub is left at the original path to avoid breaking accidental imports.
