@@ -32,4 +32,9 @@ import "./notifications.js";
 import "./importer.js";
 import "./export_csv.js";
 
+import "./services/stage_tracker.js";
+import "./services/doc_checklist.js";
+import "./ui/contact_extras.js";
+import "./ui/print_cards.js";
+
 // Nothing exported. Sequence ensures deterministic wiring.
