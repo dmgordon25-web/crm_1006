@@ -40,3 +40,5 @@ bootMainPromise.catch((err) => {
   // boot_hardener.fatal() handles overlay; here we only log.
   console.error("[BOOT:UNHANDLED]", err);
 });
+
+export default bootMainPromise;
