@@ -631,10 +631,8 @@
     box.innerHTML = `<div><strong>Contacts:</strong><ul>${list(rec.contacts||{})}</ul></div><div style="margin-top:8px"><strong>Partners:</strong><ul>${list(rec.partners||{})}</ul></div>`;
   }
 
-  const SELECTION_SCOPES = ['contacts','partners','pipeline'];
-
   function getSelectionStore(){
-    return window.SelectionStore || null;
+    return window.selectionService || window.SelectionService || window.Selection || null;
   }
 
   function selectionScopeFor(node){
@@ -642,7 +640,9 @@
       ? node.closest('[data-selection-scope]')
       : null;
     const scope = host && host.getAttribute ? host.getAttribute('data-selection-scope') : null;
-    return scope && scope.trim() ? scope.trim() : 'contacts';
+    const value = scope && scope.trim() ? scope.trim() : 'contacts';
+    if (value === 'partners') return 'partners';
+    return 'contacts';
   }
 
   function selectionIdFor(node){
@@ -659,21 +659,37 @@
     return null;
   }
 
-  function syncSelectionCheckboxes(scope, ids){
-    const scopeKey = scope && scope.trim() ? scope.trim() : 'contacts';
-    const idSet = ids instanceof Set
-      ? ids
-      : new Set(Array.isArray(ids) ? ids.map(String) : []);
-    document.querySelectorAll(`[data-selection-scope="${scopeKey}"]`).forEach(table => {
+  function syncSelectionCheckboxes(){
+    const store = getSelectionStore();
+    if(!store) return;
+    const type = typeof store.getSelectionType === 'function' ? store.getSelectionType() : store.type || 'contacts';
+    const ids = (() => {
+      if (typeof store.getSelection === 'function') return store.getSelection();
+      if (typeof store.getIds === 'function') return store.getIds();
+      if (Array.isArray(store.ids)) return store.ids;
+      if (store.ids instanceof Set) return Array.from(store.ids);
+      return [];
+    })();
+    const idSet = new Set((ids || []).map((value) => String(value)));
+    const tables = [
+      { id: '#tbl-contacts', entity: 'contacts' },
+      { id: '#tbl-clients', entity: 'contacts' },
+      { id: '#tbl-longshots', entity: 'contacts' },
+      { id: '#tbl-partners', entity: 'partners' },
+    ];
+    tables.forEach(({ id, entity }) => {
+      const table = document.querySelector(id);
+      if(!table) return;
+      const activeIds = entity === type ? idSet : new Set();
       table.querySelectorAll('tbody tr[data-id]').forEach(row => {
-        const id = row.getAttribute('data-id');
-        if(!id) return;
+        const value = row.getAttribute('data-id');
+        if(!value) return;
+        const shouldCheck = activeIds.has(String(value));
         const checkbox = row.querySelector('[data-role="select"]');
-        if(!checkbox) return;
-        const shouldCheck = idSet.has(String(id));
-        if(checkbox.checked !== shouldCheck){
+        if(checkbox && checkbox.checked !== shouldCheck){
           checkbox.checked = shouldCheck;
         }
+        row.classList.toggle('is-selected', shouldCheck);
       });
       const header = table.querySelector('thead input[data-role="select-all"]');
       if(header){
@@ -694,59 +710,25 @@
     const bar = document.getElementById('actionbar');
     if(!bar) return;
     const total = Number(count) || 0;
-    const apply = typeof window.applyActionBarGuards === 'function'
-      ? window.applyActionBarGuards
-      : null;
-    let guards = null;
-    if(apply){
-      guards = apply(bar, total);
-    }else{
-      const compute = typeof window.computeActionBarGuards === 'function'
-        ? window.computeActionBarGuards
-        : (()=>({}));
-      guards = compute(total);
-      const fallbackActs = {
-        edit: 'edit',
-        merge: 'merge',
-        emailTogether: 'emailTogether',
-        emailMass: 'emailMass',
-        addTask: 'task',
-        bulkLog: 'bulkLog',
-        delete: 'delete',
-        clear: 'clear'
-      };
-      Object.entries(fallbackActs).forEach(([key, act]) => {
-        const btn = bar.querySelector(`[data-act="${act}"]`);
-        if(!btn) return;
-        const enabled = !!guards[key];
-        btn.disabled = !enabled;
-        btn.classList?.toggle('disabled', !enabled);
-        const isPrimary = act === 'edit' || act === 'merge';
-        btn.classList?.toggle('active', isPrimary && enabled);
-      });
-    }
-    if(total > 0){
-      bar.classList.add('has-selection');
-    }else{
-      bar.classList.remove('has-selection');
-    }
+    bar.classList.toggle('has-selection', total > 0);
   }
 
   function handleSelectionSnapshot(snapshot){
-    if(!snapshot || typeof snapshot.scope !== 'string') return;
-    const ids = snapshot.ids instanceof Set
-      ? snapshot.ids
-      : new Set(Array.from(snapshot.ids || [], value => String(value)));
-    syncSelectionCheckboxes(snapshot.scope, ids);
-    updateActionBarGuards(ids.size);
+    syncSelectionCheckboxes();
+    const count = snapshot && typeof snapshot.count === 'number'
+      ? snapshot.count
+      : (getSelectionStore()?.getSelectionCount?.() || (getSelectionStore()?.getSelection?.() || []).length || 0);
+    updateActionBarGuards(count);
   }
 
   function clearAllSelectionScopes(){
     const store = getSelectionStore();
     if(!store) return;
-    SELECTION_SCOPES.forEach(scope => {
-      if(store.count(scope)) store.clear(scope);
-    });
+    if(typeof store.clear === 'function'){
+      store.clear('nav');
+    }else if(typeof store.set === 'function'){
+      store.set([], 'contacts');
+    }
   }
 
   function initSelectionBindings(){
@@ -754,7 +736,9 @@
     const store = getSelectionStore();
     if(!store) return;
     initSelectionBindings.__wired = true;
-    store.subscribe(handleSelectionSnapshot);
+    if(typeof store.subscribe === 'function'){
+      store.subscribe(handleSelectionSnapshot);
+    }
     document.addEventListener('change', (event)=>{
       const target = event.target;
       if(!(target instanceof HTMLInputElement)) return;
@@ -762,12 +746,28 @@
       const scope = selectionScopeFor(target);
       const id = selectionIdFor(target);
       if(!id) return;
-      const next = store.get(scope);
-      if(target.checked) next.add(id);
-      else next.delete(id);
-      store.set(next, scope);
+      if(target.checked){
+        store.select?.(id, scope, 'checkbox');
+      }else{
+        store.deselect?.(id, scope, 'checkbox');
+      }
     });
-    updateActionBarGuards(0);
+    document.addEventListener('click', (event)=>{
+      if(event.defaultPrevented) return;
+      const row = event.target.closest?.('tr[data-id]');
+      if(!row) return;
+      const table = row.closest?.('table');
+      if(!table) return;
+      const tableId = table.id || '';
+      if(!/^tbl-(contacts|clients|longshots)$/i.test(tableId)) return;
+      const ignore = event.target.closest?.('a[href], button, [data-role="select"], input, label[for], [data-act]');
+      if(ignore) return;
+      const id = row.getAttribute('data-id');
+      if(!id) return;
+      store.toggle?.(id, 'contacts', 'row');
+    });
+    document.addEventListener('app:data:changed', syncSelectionCheckboxes);
+    handleSelectionSnapshot({ count: store.getSelectionCount?.() || (store.getSelection?.() || []).length || 0 });
   }
 
   let longShotsPending = false;

@@ -395,4 +395,10 @@ import { createFormFooter } from './ui/form_footer.js';
       catch(err){ console.warn('partner modal pending open failed', err); }
     });
   }
+
+  if(typeof window.openPartnerEditModal !== 'function'){
+    window.openPartnerEditModal = function(partnerId){
+      return window.renderPartnerModal(partnerId);
+    };
+  }
 })();

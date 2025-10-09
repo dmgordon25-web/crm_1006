@@ -1,5 +1,3 @@
-import { ensurePartnersMergeButton, setPartnersMergeState, onPartnersMerge } from './ui/action_bar.js';
-
 const SCORE_FIELDS = [
   'name','company','email','phone','tier','partnerType','focus','priority','preferredContact','cadence','address','city','state','zip','referralVolume','lastTouch','nextTouch','relationshipOwner','collaborationFocus','notes'
 ];
@@ -90,23 +88,6 @@ function diffPartnerFields(before, after) {
   });
   if ((before && before.notes) !== (after && after.notes)) changed.push('notes');
   return changed;
-}
-
-function getSelectionStore() {
-  return window.SelectionStore || null;
-}
-
-function currentPartnerSelection() {
-  const store = getSelectionStore();
-  if (!store) return [];
-  const ids = store.get('partners');
-  return Array.from(ids || []);
-}
-
-function setPartnerSelection(ids) {
-  const store = getSelectionStore();
-  if (!store) return;
-  store.set(new Set(ids.map(String)), 'partners');
 }
 
 function ensureModal() {
@@ -214,43 +195,40 @@ async function performMerge(ids) {
     return;
   }
   const result = await window.mergePartners(keep.id, drop.id, { preview: false });
-  setPartnerSelection([keep.id]);
+  try {
+    const svc = window.selectionService || window.SelectionService || window.Selection;
+    if (svc && typeof svc.set === 'function') {
+      svc.set([keep.id], 'partners', 'merge:partners');
+    }
+  } catch (err) {
+    console.warn('partner selection sync failed', err);
+  }
   if (window.toast) {
     window.toast(`Merged "${canon(drop.name)||drop.id}" into "${canon(keep.name)||keep.id}"`);
   }
   return result;
 }
 
-function initActionBarBridge() {
-  ensurePartnersMergeButton();
-  onPartnersMerge(() => {
-    const ids = currentPartnerSelection();
-    performMerge(ids);
-  });
-}
-
-function updateButton() {
-  const ids = currentPartnerSelection();
-  const count = ids.length;
-  setPartnersMergeState({ visible: count > 0, enabled: count === 2 });
-}
-
-function subscribeSelection() {
-  const store = getSelectionStore();
-  if (!store || subscribeSelection.__wired) return;
-  subscribeSelection.__wired = true;
-  store.subscribe((snapshot) => {
-    if (!snapshot || snapshot.scope !== 'partners') return;
-    updateButton();
-  });
-}
-
-initActionBarBridge();
-subscribeSelection();
-updateButton();
 document.addEventListener('app:data:changed', (evt) => {
   if (!evt || !evt.detail) return;
-  if (evt.detail.scope === 'partners' || evt.detail.scope === 'import') {
-    updateButton();
+  if (evt.detail.scope === 'partners' || evt.detail.selectionType === 'partners') {
+    try {
+      const svc = window.selectionService || window.SelectionService || window.Selection;
+      if (svc && typeof svc.reemit === 'function') {
+        svc.reemit('partners:merge:refresh');
+      }
+    } catch (err) {
+      console.warn('partner merge selection refresh failed', err);
+    }
   }
 });
+
+export async function mergePartnersWithIds(ids) {
+  return performMerge(ids);
+}
+
+if (typeof window !== 'undefined') {
+  window.mergePartnersWithIds = mergePartnersWithIds;
+}
+
+export default mergePartnersWithIds;

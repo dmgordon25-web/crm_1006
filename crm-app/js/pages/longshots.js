@@ -1,4 +1,4 @@
-const LONGSHOTS_SCOPE = 'pipeline';
+import * as selection from '../services/selection.js';
 
 function resolveElement(selector) {
   if (typeof document === 'undefined') return null;
@@ -50,8 +50,6 @@ function wireTableInteractions(table) {
   if (!table || table.__longshotsWired) return;
   table.__longshotsWired = true;
 
-  table.setAttribute('data-selection-scope', LONGSHOTS_SCOPE);
-
   table.addEventListener('click', (event) => {
     const link = event.target && typeof event.target.closest === 'function'
       ? event.target.closest('[data-role="contact-name"]')
@@ -80,9 +78,8 @@ function wireTableInteractions(table) {
     const id = contactIdFrom(row);
     if (!id) return;
 
-    const selection = window.SelectionStore || null;
-    if (selection && typeof selection.toggle === 'function') {
-      selection.toggle(id, LONGSHOTS_SCOPE);
+    if (typeof selection.toggle === 'function') {
+      selection.toggle(id, 'contacts', 'longshots:row');
     }
   });
 }
