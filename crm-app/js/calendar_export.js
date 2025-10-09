@@ -1,265 +1,250 @@
-(function () {
-  if (window.__WIRED_calendarExport) return;
-  window.__WIRED_calendarExport = true;
+import { generateICS } from "./calendar_ics.js";
 
-  const selectorOrder = [
-    '[data-view="calendar"] [data-act="export-ics"]',
-    '[data-view="calendar"] [data-act="calendar:export:ics"]',
-    '#view-calendar [data-act="export-ics"]',
-    '#view-calendar [data-act="calendar:export:ics"]',
-    '#cal-export-ics',
-  ];
+const LEGACY_BUTTON_SELECTORS = [
+  '[data-view="calendar"] [data-act="export-ics"]',
+  '[data-view="calendar"] [data-act="calendar:export:ics"]',
+  '#view-calendar [data-act="export-ics"]',
+  '#view-calendar [data-act="calendar:export:ics"]',
+  '#cal-export-ics',
+];
 
-  let BUTTON = null;
-  let wired = false;
+let wiring = false;
 
-  function normalizeButton(node) {
-    if (!node) return null;
-    if (node.__calendarExportNormalized) return node;
-    const clone = node.cloneNode(true);
-    clone.__calendarExportNormalized = true;
-    clone.setAttribute('data-act', 'export-ics');
-    if (node.parentNode) {
-      node.parentNode.replaceChild(clone, node);
-    }
-    const parent = clone.parentElement;
-    if (parent) {
-      const duplicates = Array.from(parent.querySelectorAll('[data-act="export-ics"]'));
-      duplicates.forEach((el) => {
-        if (el !== clone) {
-          el.remove();
-        }
-      });
-    }
-    return clone;
+function currentTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch (_) {
+    return null;
   }
+}
 
-  function findButton() {
-    if (BUTTON && document.contains(BUTTON)) return BUTTON;
-    let found = null;
-    for (const sel of selectorOrder) {
-      if (typeof document?.querySelector !== 'function') break;
-      const candidate = document.querySelector(sel);
-      if (candidate) {
-        found = candidate;
+function findCalendarToolbar() {
+  return (
+    document.querySelector('[data-view="calendar"] [data-role="toolbar"]') ||
+    document.querySelector('[data-view="calendar"] [data-toolbar]') ||
+    document.querySelector('#view-calendar [data-role="toolbar"]') ||
+    document.querySelector('#view-calendar') ||
+    document.querySelector('[data-view="calendar"]') ||
+    null
+  );
+}
+
+function normalizeButton(node) {
+  if (!node) return null;
+  node.setAttribute('data-act', 'ics');
+  if (!node.textContent || !node.textContent.trim()) {
+    node.textContent = 'Export ICS';
+  }
+  return node;
+}
+
+function removeDuplicateButtons(preferred, scope) {
+  if (!scope) return;
+  const candidates = scope.querySelectorAll('[data-act="ics"],[data-act="export-ics"],[data-act="calendar:export:ics"]');
+  candidates.forEach((node) => {
+    if (node !== preferred) node.remove();
+  });
+}
+
+function ensureButton() {
+  const toolbar = findCalendarToolbar();
+  if (!toolbar) return null;
+
+  let button = toolbar.querySelector('[data-act="ics"]');
+  if (!button) {
+    for (const selector of LEGACY_BUTTON_SELECTORS) {
+      const legacy = document.querySelector(selector);
+      if (legacy) {
+        button = normalizeButton(legacy);
         break;
       }
     }
-    if (!found) return null;
-    BUTTON = normalizeButton(found);
-    return BUTTON;
   }
 
-  function resolveSelectedIds() {
-    try {
-      const svc = window.selectionService || window.SelectionService || window.Selection;
-      if (!svc) return [];
-      const type = typeof svc.getSelectionType === 'function' ? svc.getSelectionType() : svc.type;
-      if (type !== 'calendar') return [];
-      const ids = typeof svc.getSelection === 'function'
-        ? svc.getSelection()
-        : (typeof svc.getIds === 'function' ? svc.getIds() : []);
-      if (Array.isArray(ids)) {
-        return ids.map((id) => String(id)).filter(Boolean);
-      }
-    } catch (_) {}
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Export ICS';
+    button.setAttribute('data-act', 'ics');
+    toolbar.appendChild(button);
+  } else {
+    normalizeButton(button);
+  }
+
+  removeDuplicateButtons(button, toolbar);
+  return button;
+}
+
+function resolveSelectedIds() {
+  try {
+    const svc = window.selectionService || window.SelectionService || window.Selection;
+    if (!svc) return [];
+    const type = typeof svc.getSelectionType === 'function' ? svc.getSelectionType() : svc.type;
+    if (type !== 'calendar') return [];
+    const rawIds = typeof svc.getSelection === 'function'
+      ? svc.getSelection()
+      : (typeof svc.getIds === 'function' ? svc.getIds() : []);
+    if (!Array.isArray(rawIds)) return [];
+    return rawIds.map((id) => String(id)).filter(Boolean);
+  } catch (_) {
     return [];
   }
+}
 
-  async function gatherEvents() {
-    const ids = resolveSelectedIds();
-    const hasSelection = ids.length > 0;
-    const idSet = new Set(ids.map(String));
+function candidateKey(event) {
+  return (
+    event?.id ??
+    event?.uid ??
+    event?.eventId ??
+    event?.calendarEventId ??
+    event?.calendar_id ??
+    null
+  );
+}
 
-    const use = (value) => (value && typeof value.then === 'function') ? value : Promise.resolve(value);
+async function gatherEvents() {
+  const ids = resolveSelectedIds();
+  const hasSelection = ids.length > 0;
+  const idSet = new Set(ids.map(String));
 
-    const filter = (list) => {
-      if (!Array.isArray(list)) return [];
-      if (!hasSelection) return list;
-      return list.filter((item) => {
-        const key = item && (item.id ?? item.uid ?? item.eventId ?? item.calendarEventId);
-        return key != null && idSet.has(String(key));
-      });
-    };
+  const use = (value) => (value && typeof value.then === 'function' ? value : Promise.resolve(value));
 
-    try {
-      if (typeof window.getCalendarEvents === 'function') {
-        const result = await use(window.getCalendarEvents({ range: hasSelection ? 'selection' : 'all', ids }));
-        const filtered = filter(result);
-        if (filtered.length) return filtered;
-      }
-    } catch (_) {}
-
-    try {
-      if (hasSelection && typeof window.CalendarStore?.getEventsByIds === 'function') {
-        const result = await use(window.CalendarStore.getEventsByIds(ids));
-        const filtered = filter(result);
-        if (filtered.length) return filtered;
-      }
-    } catch (_) {}
-
-    try {
-      if (!hasSelection && typeof window.CalendarStore?.visibleEvents === 'function') {
-        const result = await use(window.CalendarStore.visibleEvents());
-        const filtered = filter(result);
-        if (filtered.length) return filtered;
-      }
-    } catch (_) {}
-
-    try {
-      if (typeof window.dbGetAll === 'function') {
-        const all = await window.dbGetAll('events').catch(() => []);
-        const filtered = filter(all);
-        if (filtered.length) return filtered;
-      }
-    } catch (_) {}
-
-    const fallback = Array.isArray(window.__CAL_EVENTS__) ? filter(window.__CAL_EVENTS__) : [];
-    return fallback;
-  }
-
-  const safeText = (value) => String(value || '').replace(/[\r\n]+/g, ' ').trim();
-
-  function normalizeEvent(event) {
-    const firstDate = event?.start || event?.startDate || event?.dtstart || event?.begin || event?.date || event?.start_at;
-    const lastDate = event?.end || event?.endDate || event?.dtend || event?.finish || event?.end_at;
-    return {
-      id: event?.id || event?.uid || event?.eventId || event?.calendarEventId || null,
-      title: event?.title || event?.summary || event?.name || 'Event',
-      description: event?.description || event?.desc || event?.notes || '',
-      location: event?.location || event?.place || '',
-      start: firstDate,
-      end: lastDate,
-      allDay: Boolean(event?.allDay ?? event?.isAllDay ?? event?.allday ?? false),
-    };
-  }
-
-  function formatDateTime(value) {
-    const date = value instanceof Date ? value : new Date(value);
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-  }
-
-  function formatDate(value) {
-    const date = value instanceof Date ? value : new Date(value);
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  }
-
-  async function buildIcsText() {
-    const rawEvents = await gatherEvents();
-    const normalized = rawEvents.map(normalizeEvent);
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-
-    const makeIcs = window.makeIcsFromEvents || window.buildIcsFromEvents;
-    if (typeof makeIcs === 'function') {
-      try {
-        const built = makeIcs(rawEvents, { tz: timezone });
-        if (built) return built;
-      } catch (_) {}
-    }
-
-    if (typeof window.CRM_ICS?.buildICS === 'function') {
-      try {
-        const built = window.CRM_ICS.buildICS(normalized);
-        if (built) return built;
-      } catch (_) {}
-    }
-
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//CRM_vFinal//EN',
-      `X-WR-TIMEZONE:${timezone}`,
-    ];
-
-    const stamp = formatDateTime(new Date()) || '';
-
-    normalized.forEach((entry) => {
-      lines.push('BEGIN:VEVENT');
-      const uid = entry.id ? String(entry.id) : (typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `evt-${Math.random().toString(36).slice(2)}`);
-      lines.push(`UID:${uid}`);
-      if (stamp) lines.push(`DTSTAMP:${stamp}`);
-      if (entry.allDay) {
-        const startDate = formatDate(entry.start) || formatDate(new Date());
-        const endDateSource = entry.end ? entry.end : (() => {
-          const start = entry.start ? new Date(entry.start) : new Date();
-          if (Number.isNaN(start.getTime())) return null;
-          start.setDate(start.getDate() + 1);
-          return start;
-        })();
-        const endDate = formatDate(endDateSource);
-        if (startDate) lines.push(`DTSTART;VALUE=DATE:${startDate}`);
-        if (endDate) lines.push(`DTEND;VALUE=DATE:${endDate}`);
-      } else {
-        const start = formatDateTime(entry.start);
-        if (start) lines.push(`DTSTART:${start}`);
-        const end = formatDateTime(entry.end);
-        if (end) lines.push(`DTEND:${end}`);
-      }
-      const summary = safeText(entry.title || 'Event');
-      if (summary) lines.push(`SUMMARY:${summary.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
-      const location = safeText(entry.location);
-      if (location) lines.push(`LOCATION:${location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
-      const desc = safeText(entry.description);
-      if (desc) lines.push(`DESCRIPTION:${desc.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
-      lines.push('END:VEVENT');
+  const filter = (list) => {
+    if (!Array.isArray(list)) return [];
+    if (!hasSelection) return list;
+    return list.filter((item) => {
+      const key = candidateKey(item);
+      return key != null && idSet.has(String(key));
     });
+  };
 
-    lines.push('END:VCALENDAR');
-    return lines.join('\r\n');
-  }
-
-  async function onExport(ev) {
-    ev?.preventDefault?.();
-    try {
-      const ics = await buildIcsText();
-      if (!ics) return;
-      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-      const ymd = new Date().toISOString().slice(0, 10);
-      const version = window.__APP_VERSION__;
-      const name = `CRM_${version?.tag || 'vFinal'}_${
-        version?.ymd || ymd
-      }_Calendar.ics`;
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = name;
-      document.body.appendChild(link);
-      link.click();
-      URL.revokeObjectURL(link.href);
-      link.remove();
-      window.dispatchAppDataChanged?.('calendar:export:ics');
-    } catch (err) {
-      console.error('ICS export failed', err);
+  try {
+    if (typeof window.getCalendarEvents === 'function') {
+      const result = await use(window.getCalendarEvents({ range: hasSelection ? 'selection' : 'visible', ids }));
+      const filtered = filter(result);
+      if (filtered.length) return filtered;
     }
-  }
+  } catch (_) {}
 
-  function wire() {
-    if (wired) return;
-    const btn = findButton();
-    if (!btn) return;
-    BUTTON = btn;
-    if (!BUTTON.__calendarExportWired) {
-      BUTTON.__calendarExportWired = true;
-      BUTTON.addEventListener('click', onExport);
+  try {
+    if (hasSelection && typeof window.CalendarStore?.getEventsByIds === 'function') {
+      const result = await use(window.CalendarStore.getEventsByIds(ids));
+      const filtered = filter(result);
+      if (filtered.length) return filtered;
     }
-    wired = true;
-  }
+  } catch (_) {}
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      wire();
-      if (!wired) window.requestAnimationFrame?.(wire);
-    }, { once: true });
-  } else {
-    wire();
-    if (!wired) window.requestAnimationFrame?.(wire);
-  }
+  try {
+    if (!hasSelection && typeof window.CalendarStore?.visibleEvents === 'function') {
+      const result = await use(window.CalendarStore.visibleEvents());
+      const filtered = filter(result);
+      if (filtered.length) return filtered;
+    }
+  } catch (_) {}
 
-  document.addEventListener('app:data:changed', () => {
-    if (!wired) wire();
+  try {
+    if (typeof window.dbGetAll === 'function') {
+      const all = await window.dbGetAll('events').catch(() => []);
+      const filtered = filter(all);
+      if (filtered.length) return filtered;
+    }
+  } catch (_) {}
+
+  const fallback = Array.isArray(window.__CAL_EVENTS__) ? filter(window.__CAL_EVENTS__) : [];
+  return fallback;
+}
+
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function isDateOnly(value) {
+  if (value instanceof Date) return false;
+  if (typeof value === 'string') return DATE_ONLY.test(value.trim());
+  return false;
+}
+
+function mapEventForICS(event) {
+  if (!event) return null;
+  const start = event.start ?? event.startDate ?? event.dtstart ?? event.begin ?? event.date ?? event.start_at ?? event.starts_at;
+  const end = event.end ?? event.endDate ?? event.dtend ?? event.finish ?? event.end_at ?? event.ends_at;
+
+  let allDay = Boolean(event.allDay ?? event.isAllDay ?? event.allday);
+  if (!allDay && isDateOnly(start)) allDay = true;
+
+  return {
+    id: candidateKey(event) || null,
+    title: event.title ?? event.summary ?? event.name ?? event.subject ?? 'Event',
+    description: event.description ?? event.desc ?? event.notes ?? '',
+    location: event.location ?? event.place ?? '',
+    start,
+    end,
+    allDay,
+    tz: event.tz || event.timezone || event.timeZone || event.tzid || null,
+    contactName: event.contactName || event.contact || event.borrower || event.borrowerName || event.clientName || null,
+    calendarName: event.calendarName || event.calendar || event.source || null,
+  };
+}
+
+function inferFilenameHint(events) {
+  if (!Array.isArray(events) || events.length === 0) return 'calendar';
+  const sample = events[0] || {};
+  const fromContact =
+    sample.contactName ||
+    sample.contact ||
+    sample.borrower ||
+    sample.borrowerName ||
+    sample.clientName ||
+    sample.name;
+  if (fromContact && String(fromContact).trim()) return fromContact;
+  const fromCalendar = sample.calendarName || sample.calendar || sample.source || sample.type;
+  if (fromCalendar && String(fromCalendar).trim()) return fromCalendar;
+  if (events.length === 1) {
+    const title = sample.title || sample.summary || sample.name;
+    if (title && String(title).trim()) return title;
+  }
+  return 'calendar';
+}
+
+async function handleExport(event) {
+  event?.preventDefault?.();
+  try {
+    const rawEvents = await gatherEvents();
+    const mapped = rawEvents.map(mapEventForICS).filter(Boolean);
+    if (!mapped.length) return;
+    const tz = currentTimeZone();
+    const hint = inferFilenameHint(mapped);
+    generateICS({ events: mapped, tz, filenameHint: hint });
+    window.dispatchAppDataChanged?.({ source: 'calendar:export:ics' });
+  } catch (err) {
+    console.error('[calendar] ICS export failed', err);
+  }
+}
+
+function wireButton() {
+  const button = ensureButton();
+  if (!button) return;
+  if (!button.__wiredCalendarICS) {
+    button.__wiredCalendarICS = true;
+    button.addEventListener('click', handleExport);
+  }
+}
+
+function scheduleWire() {
+  if (wiring) return;
+  wiring = true;
+  requestAnimationFrame(() => {
+    wiring = false;
+    wireButton();
   });
-})();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    wireButton();
+    scheduleWire();
+  }, { once: true });
+} else {
+  wireButton();
+  scheduleWire();
+}
+
+document.addEventListener('app:data:changed', () => scheduleWire());

@@ -24,7 +24,6 @@ import "./dashboard/widgets_dnd.js";
 import "./calendar.js";
 import "./calendar_ics.js";
 import "./calendar_export.js";
-import "./ical.js";
 
 // Documents / Reports
 import "./doccenter_rules.js";
