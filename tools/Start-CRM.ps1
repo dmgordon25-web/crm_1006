@@ -1,134 +1,224 @@
-#requires -version 5.1
+# CRM_vFinal — version-agnostic launcher (PS 5.1 and 7.x)
+# - Serves crm-app via HttpListener on http://127.0.0.1:<port>
+# - Self-heals URLACL (UAC once) if needed
+# - Readiness-check before opening browser; never opens about:blank
+# - Fallback to file:// with single WARN line if server cannot start
+
 $ErrorActionPreference = 'Stop'
 
 function Say([string]$msg,[string]$lvl='INFO'){
   $ts=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  $fg='Gray'; if($lvl -eq 'WARN'){$fg='Yellow'} elseif($lvl -eq 'ERROR'){$fg='Red'} elseif($lvl -eq 'OK'){$fg='Green'}
+  $fg='Gray'
+  switch ($lvl) {
+    'WARN' { $fg='Yellow' }
+    'ERROR'{ $fg='Red' }
+    'OK'   { $fg='Green' }
+  }
   Write-Host "$ts [$lvl] $msg" -ForegroundColor $fg
 }
-function PauseExit([int]$code){ [void](Read-Host 'Press Enter to exit'); exit $code }
-function Fail([string]$reason,[int]$code=1){ Say $reason 'ERROR'; PauseExit $code }
-function IsAdmin(){ try{ ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator) }catch{ $false } }
 
-# Resolve paths
-$RepoRoot=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$WebRoot =(Resolve-Path -LiteralPath (Join-Path $RepoRoot 'crm-app')).Path
-$Index   =Join-Path $WebRoot 'index.html'
-$JsRoot  =Join-Path $WebRoot 'js'
-Say "Repo: $RepoRoot"
-Say "Web : $WebRoot"
-
-# Preflight (repo integrity)
-if(-not (Test-Path -LiteralPath $WebRoot)){ Fail "Missing folder: crm-app" 10 }
-if(-not (Test-Path -LiteralPath $Index)){   Fail "Missing file: crm-app\index.html" 10 }
-try{ $len=(Get-Item -LiteralPath $Index).Length; if($len -lt 50){ Fail "index.html looks empty ($len bytes)" 10 } }catch{ Fail ("Cannot read index.html: " + $_.Exception.Message) 10 }
-if(-not (Test-Path -LiteralPath (Join-Path $JsRoot 'boot\loader.js'))){   Fail "Missing js\boot\loader.js" 11 }
-if(-not (Test-Path -LiteralPath (Join-Path $JsRoot 'boot\manifest.js'))){ Fail "Missing js\boot\manifest.js" 11 }
-
-# Non-admin friendly unblocking (no error if unnecessary)
-try{ Get-ChildItem -LiteralPath $WebRoot -Recurse -File | ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } }catch{}
-
-# Decide path: HttpListener or file:// fallback
-$haveHttpListener = [type]::GetType('System.Net.HttpListener') -ne $null
-if(-not $haveHttpListener){
-  Say "HttpListener type not available on this box; opening file:// fallback" 'WARN'
-  $fileUrl=(Get-Item -LiteralPath $Index).FullName
-  try{ Start-Process $fileUrl | Out-Null }catch{}
-  PauseExit 0
+function Is-Admin(){
+  try {
+    $id=[Security.Principal.WindowsIdentity]::GetCurrent()
+    $p = New-Object Security.Principal.WindowsPrincipal($id)
+    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch { return $false }
 }
 
-# HttpListener path (no Add-Type)
-# Pick free port
-$Port=$null
-foreach($range in @((8080..8099),(8100..8199))){
-  foreach($p in $range){
-    try{ $tcp=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,$p); $tcp.Start(); $tcp.Stop(); $Port=$p; break }catch{}
-  }
-  if($Port){ break }
+function Supports-UseBasicParsing(){
+  try { return (Get-Command Invoke-WebRequest -ErrorAction Stop).Parameters.ContainsKey('UseBasicParsing') } catch { return $false }
 }
-if(-not $Port){ Fail "No free port in 8080..8199" 30 }
 
-# Try to start listener; if denied, auto-add URLACL once
-$prefix="http://127.0.0.1:$Port/"
-$listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add($prefix)
-try{
-  $listener.Start()
-}catch{
-  $msg=$_.Exception.Message
-  if(($msg -match 'denied') -or ($msg -match 'Access is denied')){
-    if(-not (IsAdmin)){
-      Say "Permission needed to reserve URL. Requesting UAC once..." 'WARN'
-      $acl="netsh http add urlacl url=$prefix user=$env:UserDomain\$env:UserName listen=yes"
-      try{ Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList "-NoProfile","-Command",$acl -Wait }catch{ Fail ("URL ACL add failed: " + $_.Exception.Message) 40 }
-      try{ $listener.Start() }catch{ Fail ("Could not start server after URL ACL: " + $_.Exception.Message) 40 }
+function Http-Head([string]$url){
+  try {
+    if (Supports-UseBasicParsing) {
+      $r = Invoke-WebRequest -UseBasicParsing -Uri $url -Method Get
     } else {
-      & netsh http add urlacl url=$prefix user="$env:UserDomain\$env:UserName" listen=yes | Out-Null
-      try{ $listener.Start() }catch{ Fail ("Could not start server after URL ACL: " + $_.Exception.Message) 40 }
+      $r = Invoke-WebRequest -Uri $url -Method Get
     }
+    return $r.StatusCode
+  } catch {
+    return $null
+  }
+}
+
+function First-FreePort([int]$from=8080,[int]$to=8090){
+  foreach($p in $from..$to){
+    try {
+      $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p)
+      $l.Start(); $l.Stop(); return $p
+    } catch {}
+  }
+  return $null
+}
+
+function Test-HttpListener-Usable([string]$prefix){
+  try {
+    $tmp = New-Object System.Net.HttpListener
+    $tmp.Prefixes.Add($prefix)
+    $tmp.Start()
+    $tmp.Stop()
+    return @{ ok=$true; reason=$null }
+  } catch {
+    $msg = $_.Exception.Message
+    if ($msg -match 'Access is denied' -or $msg -match 'ACL') { return @{ ok=$false; reason='ACL' } }
+    return @{ ok=$false; reason='OTHER' }
+  }
+}
+
+function Ensure-UrlAcl([string]$prefix){
+  # Add URLACL via netsh (UAC) if not present; return $true on success or already OK
+  $test = Test-HttpListener-Usable -prefix $prefix
+  if ($test.ok) { return $true }
+  if ($test.reason -ne 'ACL') { return $false }
+
+  Say "HttpListener permission missing; attempting one-time URLACL self-fix (UAC prompt expected)" 'WARN'
+  if (-not (Is-Admin)) {
+    # Relaunch elevated to add ACL then exit
+    $cmd = "netsh http add urlacl url=$prefix user=Everyone listen=yes"
+    # Use the same host (pwsh/powershell) as caller if possible
+    $hostExe = $PSVersionTable.PSEdition -eq 'Core' ? 'pwsh.exe' : 'powershell.exe'
+    Start-Process -Verb RunAs -FilePath $hostExe -ArgumentList @('-NoLogo','-NoProfile','-Command', $cmd) | Out-Null
+    Start-Sleep -Seconds 2
   } else {
-    Fail ("Could not start server: " + $msg) 40
+    & netsh http add urlacl url=$prefix user=Everyone listen=yes | Out-Null
+  }
+  Start-Sleep -Milliseconds 500
+  $retest = Test-HttpListener-Usable -prefix $prefix
+  return $retest.ok
+}
+
+function Get-MimeType([string]$path){
+  $ext = [IO.Path]::GetExtension($path).ToLowerInvariant()
+  switch ($ext) {
+    '.html' { 'text/html; charset=utf-8' }
+    '.htm'  { 'text/html; charset=utf-8' }
+    '.js'   { 'text/javascript; charset=utf-8' }
+    '.mjs'  { 'text/javascript; charset=utf-8' }
+    '.cjs'  { 'text/javascript; charset=utf-8' }
+    '.css'  { 'text/css; charset=utf-8' }
+    '.json' { 'application/json; charset=utf-8' }
+    '.svg'  { 'image/svg+xml' }
+    '.ico'  { 'image/x-icon' }
+    '.png'  { 'image/png' }
+    '.jpg'  { 'image/jpeg' }
+    '.jpeg' { 'image/jpeg' }
+    '.map'  { 'application/octet-stream' }
+    default { 'application/octet-stream' }
   }
 }
 
-# MIME map (common types)
-$Mime=@{
-  '.html'='text/html'; '.htm'='text/html'; '.css'='text/css'; '.js'='application/javascript'
-  '.mjs'='application/javascript'; '.map'='application/json'; '.json'='application/json'
-  '.svg'='image/svg+xml'; '.png'='image/png'; '.jpg'='image/jpeg'; '.jpeg'='image/jpeg'
-  '.gif'='image/gif'; '.ico'='image/x-icon'; '.webmanifest'='application/manifest+json'
-  '.txt'='text/plain'; '.csv'='text/csv'; '.wasm'='application/wasm'
-  '.woff'='font/woff'; '.woff2'='font/woff2'; '.ttf'='font/ttf'
+function Open-Browser([string]$url){
+  $chrome = (Get-Command 'chrome.exe' -ErrorAction SilentlyContinue)?.Source
+  $edge   = (Get-Command 'msedge.exe' -ErrorAction SilentlyContinue)?.Source
+  if($chrome){ Start-Process -FilePath $chrome -ArgumentList @($url); return }
+  if($edge){   Start-Process -FilePath $edge   -ArgumentList @($url); return }
+  Start-Process -FilePath $url
 }
-function Get-Mime([string]$p){ $e=[IO.Path]::GetExtension($p).ToLower(); if($Mime.ContainsKey($e)){ $Mime[$e] } else { 'application/octet-stream' } }
 
-# Launch browser
-$IndexUrl = "http://127.0.0.1:$Port/index.html?cb=" + ([Guid]::NewGuid().ToString('N'))
-$opened=$false
-foreach($b in @(
-  "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-  "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
-  "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
-  "${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe"
-)){
-  if(-not $opened -and (Test-Path -LiteralPath $b)){
-    try{ Start-Process -FilePath $b -ArgumentList @('--new-window',$IndexUrl) | Out-Null; $opened=$true }catch{}
+# Resolve repo paths
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$WebRoot  = (Resolve-Path -LiteralPath (Join-Path $RepoRoot 'crm-app')).Path
+$Index    = Join-Path $WebRoot 'index.html'
+$JsRoot   = Join-Path $WebRoot 'js'
+if(-not (Test-Path -LiteralPath $WebRoot)){ Say 'Missing folder: crm-app' 'ERROR'; exit 10 }
+if(-not (Test-Path -LiteralPath $Index)){   Say 'Missing file: crm-app\index.html' 'ERROR'; exit 10 }
+
+# Unblock downloaded files quietly
+try { Get-ChildItem -LiteralPath $WebRoot -Recurse -File | ForEach-Object { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } } catch {}
+
+# Choose port and prefix
+$Port = First-FreePort 8080 8090
+if(-not $Port){ Say 'No free port in 8080-8090' 'ERROR'; exit 12 }
+$Prefix = "http://127.0.0.1:$Port/"
+$RunLog = Join-Path $env:TEMP ("crm_vfinal_" + $Port + "_" + [Guid]::NewGuid().ToString("N") + ".log")
+Say ("Run log: " + $RunLog)
+
+# Try HttpListener; attempt URLACL self-fix if needed
+$listenerUsable = Test-HttpListener-Usable -prefix $Prefix
+if(-not $listenerUsable.ok -and $listenerUsable.reason -eq 'ACL'){
+  if (Ensure-UrlAcl -prefix $Prefix) {
+    $listenerUsable = @{ ok=$true; reason=$null }
   }
 }
-if(-not $opened){ try{ Start-Process $IndexUrl | Out-Null; $opened=$true }catch{} }
-if(-not $opened){ $file=(Get-Item -LiteralPath $Index).FullName; Say "HTTP open failed; trying file:// fallback" 'WARN'; try{ Start-Process $file | Out-Null; $opened=$true }catch{}; if(-not $opened){ Fail ("Unable to open a browser. Open manually: " + $IndexUrl) 50 } }
 
-Say ("Server up: " + "http://127.0.0.1:$Port/") 'OK'
-Say ("Opening: " + $IndexUrl) 'OK'
-Write-Host ""
+$HaveHttpListener = $listenerUsable.ok
+$ServerJob = $null
 
-# Simple serve loop (Ctrl+C to stop)
-while($true){
-  try{
-    $ctx=$listener.GetContext()
-    $raw=$ctx.Request.Url.AbsolutePath
-    $path=[System.Uri]::UnescapeDataString($raw).TrimStart('/')
-    if([string]::IsNullOrWhiteSpace($path)){ $path='index.html' }
-    if($path.EndsWith('/')){ $path=$path+'index.html' }
-    $fs=Join-Path $WebRoot $path
-    if(-not (Test-Path -LiteralPath $fs)){
-      $alt=Join-Path (Join-Path $WebRoot $path) 'index.html'
-      if(Test-Path -LiteralPath $alt){ $fs=$alt }
+if($HaveHttpListener){
+  Say ("Server up on " + $Prefix) 'OK'
+  $ServerJob = Start-Job -Name ("CRMvFinal-"+$Port) -InitializationScript {
+    $ErrorActionPreference = 'Continue'
+    function Get-MimeType([string]$path){
+      $ext = [IO.Path]::GetExtension($path).ToLowerInvariant()
+      switch ($ext) {
+        '.html' { 'text/html; charset=utf-8' }
+        '.htm'  { 'text/html; charset=utf-8' }
+        '.js'   { 'text/javascript; charset=utf-8' }
+        '.mjs'  { 'text/javascript; charset=utf-8' }
+        '.cjs'  { 'text/javascript; charset=utf-8' }
+        '.css'  { 'text/css; charset=utf-8' }
+        '.json' { 'application/json; charset=utf-8' }
+        '.svg'  { 'image/svg+xml' }
+        '.ico'  { 'image/x-icon' }
+        '.png'  { 'image/png' }
+        '.jpg'  { 'image/jpeg' }
+        '.jpeg' { 'image/jpeg' }
+        '.map'  { 'application/octet-stream' }
+        default { 'application/octet-stream' }
+      }
     }
-    if(Test-Path -LiteralPath $fs){
-      $bytes=[System.IO.File]::ReadAllBytes($fs)
-      $ctx.Response.ContentType=Get-Mime $fs
-      $ctx.Response.Headers['Cache-Control']='no-cache'
-      $ctx.Response.ContentLength64=$bytes.Length
-      $ctx.Response.StatusCode=200
-      $ctx.Response.OutputStream.Write($bytes,0,$bytes.Length)
-    } else {
-      $ctx.Response.StatusCode=404
+  } -ScriptBlock {
+    param($prefix,$root,$index,$runlog)
+    Add-Content -LiteralPath $runlog -Value ("boot " + (Get-Date).ToString("s") + " " + $prefix)
+    $listener = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add($prefix)
+    $listener.Start()
+    while($listener.IsListening){
+      try {
+        $ctx = $listener.GetContext()
+        $req = $ctx.Request
+        $res = $ctx.Response
+        $res.Headers['Cache-Control'] = 'no-cache'
+        $path = $req.Url.AbsolutePath
+        if([string]::IsNullOrWhiteSpace($path) -or $path -eq '/'){ $path = '/index.html' }
+        $fsPath = Join-Path $root ($path.TrimStart('/') -replace '/', [IO.Path]::DirectorySeparatorChar)
+        if(Test-Path -LiteralPath $fsPath){
+          $bytes = [IO.File]::ReadAllBytes($fsPath)
+          $res.StatusCode = 200
+          $res.ContentType = Get-MimeType $fsPath
+          $res.ContentLength64 = $bytes.Length
+          $res.OutputStream.Write($bytes,0,$bytes.Length)
+        } else {
+          $res.StatusCode = 404
+        }
+      } catch {
+        try { $res.StatusCode = 500 } catch {}
+      } finally {
+        try { $res.OutputStream.Close() } catch {}
+        try { $res.Close() } catch {}
+      }
     }
-  }catch{
-    try{ $ctx.Response.StatusCode=500 }catch{}
-  }finally{
-    try{ $ctx.Response.OutputStream.Close() }catch{}
-    try{ $ctx.Response.Close() }catch{}
+  } -ArgumentList $Prefix,$WebRoot,$Index,$RunLog | Out-Null
+
+  # Readiness poll (up to ~4 seconds)
+  $ok = $false
+  for($i=0; $i -lt 20; $i++){
+    $code = Http-Head ($Prefix + 'index.html')
+    if($code -eq 200){ $ok = $true; break }
+    Start-Sleep -Milliseconds 200
   }
+  if($ok){
+    Open-Browser ($Prefix + 'index.html?cb=' + [int](Get-Date -UFormat %s))
+    Say 'Open in browser: index.html (http)' 'OK'
+  } else {
+    Say 'Readiness failed; opening file:// fallback' 'WARN'
+    Open-Browser $Index
+  }
+} else {
+  Say 'HttpListener unavailable; opening file:// fallback' 'WARN'
+  Open-Browser $Index
 }
+
+Say 'Press Ctrl+C to stop server (if running). This window can stay open.' 'INFO'
+try { while($true){ Start-Sleep -Seconds 3600 } } catch {}
