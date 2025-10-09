@@ -1,193 +1,452 @@
 #requires -version 5.1
-param([switch]$NoBrowser)
-
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-# Transcript (single run log passed by %CRM_RUNLOG%)
-try {
-  if ($env:CRM_RUNLOG) {
-    $dir = Split-Path -Parent $env:CRM_RUNLOG
-    if (Test-Path -LiteralPath $dir) { Start-Transcript -Path $env:CRM_RUNLOG -Append -ErrorAction SilentlyContinue | Out-Null }
+$script:Listener = $null
+$script:Mutex = $null
+$script:ServerPowerShell = $null
+$script:ServerRunspace = $null
+$script:ServerAsync = $null
+$script:StdOut = $null
+$script:StdErr = $null
+
+function Write-LogLine {
+  param(
+    [string]$Path,
+    [string]$Line
+  )
+  if([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Line)){ return }
+  try {
+    [System.IO.File]::AppendAllText($Path, $Line + [Environment]::NewLine)
+  } catch {
+    # Ignore logging failures to avoid breaking launcher
   }
-} catch { }
-
-function Say([string]$m,[string]$lvl='INFO') {
-  $ts=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-  $fg='Gray'; if ($lvl -eq 'WARN'){ $fg='Yellow' } elseif ($lvl -eq 'ERROR'){ $fg='Red' }
-  Write-Host "$ts [$lvl] $m" -ForegroundColor $fg
-}
-function Fail([int]$code,[string]$reason,[string]$resolution) {
-  Say "CODE $code — $reason" 'ERROR'
-  if ($resolution) { Write-Host "Resolution:" -ForegroundColor Yellow; Write-Host $resolution -ForegroundColor Yellow }
-  try { Stop-Transcript | Out-Null } catch { }
-  exit $code
 }
 
-# Resolve paths
+function Say {
+  param(
+    [string]$Message,
+    [string]$Level = 'INFO'
+  )
+  $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  $line = "$timestamp [$Level] $Message"
+  $color = 'Gray'
+  switch ($Level) {
+    'WARN' { $color = 'Yellow' }
+    'ERROR' { $color = 'Red' }
+    'OK' { $color = 'Green' }
+  }
+  Write-Host $line -ForegroundColor $color
+  if($script:StdOut){ Write-LogLine -Path $script:StdOut -Line $line }
+  if($Level -eq 'ERROR' -and $script:StdErr){ Write-LogLine -Path $script:StdErr -Line $line }
+}
+
+function Cleanup {
+  if($script:Listener){
+    try { $script:Listener.Stop() } catch {}
+    try { $script:Listener.Close() } catch {}
+    $script:Listener = $null
+  }
+  if($script:ServerPowerShell){
+    if($script:ServerAsync){
+      try { $script:ServerPowerShell.EndInvoke($script:ServerAsync) } catch {}
+    }
+    try { $script:ServerPowerShell.Stop() } catch {}
+    try { $script:ServerPowerShell.Dispose() } catch {}
+    $script:ServerPowerShell = $null
+    $script:ServerAsync = $null
+  }
+  if($script:ServerRunspace){
+    try { $script:ServerRunspace.Close() } catch {}
+    try { $script:ServerRunspace.Dispose() } catch {}
+    $script:ServerRunspace = $null
+  }
+  if($script:Mutex){
+    try { $script:Mutex.ReleaseMutex() } catch {}
+    try { $script:Mutex.Dispose() } catch {}
+    $script:Mutex = $null
+  }
+  try { Stop-Transcript | Out-Null } catch {}
+}
+
+function Fail {
+  param(
+    [int]$Code,
+    [string]$Reason,
+    [string]$Resolution
+  )
+  $timestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  Say "CODE $Code — $Reason" 'ERROR'
+  if($Resolution -and $script:StdErr){ Write-LogLine -Path $script:StdErr -Line "$timestamp [RESOLUTION] $Resolution" }
+  if($Resolution){
+    Write-Host 'Resolution:' -ForegroundColor Yellow
+    Write-Host $Resolution -ForegroundColor Yellow
+  }
+  Cleanup
+  Read-Host "`nPress Enter to exit"
+  exit $Code
+}
+
+function Is-Admin {
+  try {
+    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+  } catch {
+    return $false
+  }
+}
+
+# ---------------- paths & logs ----------------
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $WebRoot  = (Resolve-Path -LiteralPath (Join-Path $RepoRoot 'crm-app')).Path
 $Index    = Join-Path $WebRoot 'index.html'
 $JsRoot   = Join-Path $WebRoot 'js'
 
-# Logs for child server
 $LogsDir = Join-Path $env:LOCALAPPDATA 'CRM\logs'
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
-$Stamp  = Get-Date -Format 'yyyyMMdd_HHmmss'
-$Base   = Join-Path $LogsDir "launcher_$Stamp"
-$StdOut = "$Base.out.log"
-$StdErr = "$Base.err.log"
+$Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$RunLog = Join-Path $LogsDir "launcher_${Stamp}.run.log"
+$StdOut = Join-Path $LogsDir "launcher_${Stamp}.out.log"
+$StdErr = Join-Path $LogsDir "launcher_${Stamp}.err.log"
+$script:StdOut = $StdOut
+$script:StdErr = $StdErr
+
+New-Item -ItemType File -Force -Path $StdOut | Out-Null
+New-Item -ItemType File -Force -Path $StdErr | Out-Null
+try { Start-Transcript -Path $RunLog -Append -ErrorAction SilentlyContinue | Out-Null } catch {}
 
 Say "Repo: $RepoRoot"
 Say "Web : $WebRoot"
+Say "Run : $RunLog"
+Say "Out : $StdOut"
+Say "Err : $StdErr"
 
-# Preflight
-if (-not (Test-Path -LiteralPath $WebRoot)) { Fail 10 "Web root missing: $WebRoot" "Restore the repo folder so 'crm-app\' exists." }
-if (-not (Test-Path -LiteralPath $Index))   { Fail 10 "Missing 'crm-app\index.html'." "Add/restore index.html and rerun." }
+# --------------- single-instance guard ---------------
+$mutexName = 'Global\CRM_vFinal_Launcher_Singleton'
 try {
-  $size = (Get-Item -LiteralPath $Index).Length
-  if ($size -lt 50) { Fail 10 "index.html appears empty or truncated ($size bytes)." "Replace with a valid index.html (should be several KB at least)." }
-} catch { Fail 10 "Cannot read index.html: $_" "Fix file permissions and rerun." }
+  $created = $false
+  $script:Mutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$created)
+  if(-not $created){
+    Fail 60 'Another CRM launcher/server seems to be running.' 'Close the other CRM window/server or wait a few seconds, then try again.'
+  }
+} catch {
+  Fail 61 "Unable to create mutex: $($_.Exception.Message)" 'Restart Windows and retry. If the issue persists, check permissions for the Global object namespace.'
+}
+
+# --------------- preflight checks ---------------
+if(-not (Test-Path -LiteralPath $WebRoot)){
+  Fail 10 'Missing folder: crm-app' "Restore the repo so 'crm-app\\' exists."
+}
+if(-not (Test-Path -LiteralPath $Index)){
+  Fail 10 'Missing file: crm-app\index.html' 'Restore index.html to crm-app.'
+}
+try {
+  $len = (Get-Item -LiteralPath $Index).Length
+  if($len -lt 50){
+    Fail 10 "index.html looks empty ($len bytes)" 'Replace with a valid index.html (several KB expected).'
+  }
+} catch {
+  Fail 10 "Cannot read index.html: $($_.Exception.Message)" 'Fix file permissions or path and retry.'
+}
 
 $Loader   = Join-Path $JsRoot 'boot\loader.js'
 $Manifest = Join-Path $JsRoot 'boot\manifest.js'
-if (-not (Test-Path -LiteralPath $Loader))   { Fail 11 "Missing js\boot\loader.js" "Restore boot/loader.js (SafeBoot requires it)." }
-if (-not (Test-Path -LiteralPath $Manifest)) { Fail 11 "Missing js\boot\manifest.js" "Restore boot/manifest.js with CORE/PATCHES arrays." }
-
-# Light content scan for common landmines
-$bad=@(); $merge=@(); $patch=@(); $ghost=@()
-Get-ChildItem -LiteralPath $JsRoot -Recurse -File -Include *.js,*.mjs | ForEach-Object {
-  $t = Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
-  if ($t -match '…')                                  { $bad   += $_.FullName }
-  if ($t -match '<<<<<<<|>>>>>>>|=======')              { $merge += $_.FullName }
-  if ($t -match 'import\s+.*patch_\d{4}-\d{2}-\d{2}') { $patch += $_.FullName }
-  if ($t -match "import\s+['\"]\./documents\.js['\"]"){ $ghost += $_.FullName }
+if(-not (Test-Path -LiteralPath $Loader)){
+  Fail 11 'Missing js\boot\loader.js' 'Restore js/boot/loader.js (SafeBoot requires it).'
 }
-if ($bad.Count)   { Fail 20 "Unicode ellipsis found in JS (U+2026) which breaks parsing." ("Edit these files to replace the character with ASCII or remove it:`n  " + ($bad -join "`n  ")) }
-if ($merge.Count) { Fail 21 "Git merge markers present in JS." ("Clean these files of <<<<<, >>>>>, ======:`n  " + ($merge -join "`n  ")) }
-if ($patch.Count) { Fail 22 "Dev-only patch imports detected (SafeBoot off)." ("Remove direct imports of 'patch_YYYY-MM-DD_*.js' from:`n  " + ($patch -join "`n  ") + "`nUse manifest gating instead.") }
-if ($ghost.Count) { Fail 23 "Missing module './documents.js' is imported." ("Remove or replace that import in:`n  " + ($ghost -join "`n  ") + "`nUse existing doc_checklist services instead.") }
-
-# Port pick (8080..8099)
-$Port = $null
-for ($p=8080; $p -le 8099; $p++) {
-  try { $tcp = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,$p); $tcp.Start(); $tcp.Stop(); $Port=$p; break } catch { }
-}
-if (-not $Port) { Fail 30 "No free port in 8080–8099." "Close other apps using those ports or widen the range in Start-CRM.ps1." }
-$BaseUrl  = "http://127.0.0.1:$Port/"
-$CacheBust = [Guid]::NewGuid().ToString('N')
-$IndexUrl = "${BaseUrl}index.html?cb=$CacheBust"
-
-Say "Port : $Port"
-
-# MIME map
-$Mime = @{
-  '.html'='text/html'; '.htm'='text/html'; '.css'='text/css'; '.js'='application/javascript'
-  '.mjs'='application/javascript'; '.map'='application/json'; '.json'='application/json'
-  '.svg'='image/svg+xml'; '.png'='image/png'; '.jpg'='image/jpeg'; '.jpeg'='image/jpeg'
-  '.gif'='image/gif'; '.ico'='image/x-icon'; '.webmanifest'='application/manifest+json'
-  '.txt'='text/plain'; '.csv'='text/csv'; '.wasm'='application/wasm'
+if(-not (Test-Path -LiteralPath $Manifest)){
+  Fail 11 'Missing js\boot\manifest.js' 'Restore js/boot/manifest.js with CORE/PATCHES arrays.'
 }
 
-# Child server script (PS 5.1 safe)
-$EscRoot = $WebRoot -replace '\\','\\'
-$ServerScript = @"
-Add-Type -AssemblyName System.Net.HttpListener
-Add-Type -AssemblyName System.Web
-`$h = New-Object System.Net.HttpListener
-`$h.Prefixes.Add('http://127.0.0.1:$Port/')
-`$h.Start()
-
-function Get-MimeType([string]`$path) {
-  switch ([System.IO.Path]::GetExtension(`$path).ToLower()) {
-$( $Mime.Keys | ForEach-Object { "    '$_' { return '$($Mime[$_])' }" } )
-    default { return 'application/octet-stream' }
-  }
-}
-function Send-File([System.Net.HttpListenerContext]`$ctx, [string]`$fs) {
-  try {
-    if (-not (Test-Path -LiteralPath `$fs)) { `$ctx.Response.StatusCode = 404; return }
-    `$bytes = [System.IO.File]::ReadAllBytes(`$fs)
-    `$ctx.Response.ContentType = Get-MimeType -path `$fs
-    `$ctx.Response.ContentLength64 = `$bytes.Length
-    `$ctx.Response.StatusCode = 200
-    `$ctx.Response.Headers['Cache-Control'] = 'no-cache'
-    `$ctx.Response.OutputStream.Write(`$bytes,0,`$bytes.Length)
-  } catch { `$ctx.Response.StatusCode = 500 }
-  finally {
-    try { `$ctx.Response.OutputStream.Close() } catch {}
-    try { `$ctx.Response.Close() } catch {}
-  }
-}
+# --------------- auto-remediation tasks ---------------
 try {
-  while (`$true) {
-    `$ctx = `$h.GetContext()
-    `$raw = `$ctx.Request.Url.AbsolutePath
-    `$path = [System.Uri]::UnescapeDataString(`$raw).TrimStart('/')
-    if ([string]::IsNullOrWhiteSpace(`$path)) { `$path = 'index.html' }
-    if (`$path.EndsWith('/')) { `$path = `$path + 'index.html' }
-    `$fs = Join-Path '$EscRoot' `$path
-    if (-not (Test-Path -LiteralPath `$fs)) {
-      if (Test-Path -LiteralPath (Join-Path '$EscRoot' `$path 'index.html')) {
-        `$fs = Join-Path (Join-Path '$EscRoot' `$path) 'index.html'
+  Say 'Unblocking files under crm-app (if needed)…'
+  Get-ChildItem -LiteralPath $WebRoot -Recurse -File | ForEach-Object {
+    try { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } catch {}
+  }
+} catch {
+  Say "Unblock step encountered an error: $($_.Exception.Message)" 'WARN'
+}
+
+# --------------- pick free port ---------------
+$chosenPort = $null
+$portRanges = @(8080..8099, 8100..8199)
+foreach($range in $portRanges){
+  foreach($p in $range){
+    $tcp = $null
+    try {
+      $tcp = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $p)
+      $tcp.Start()
+      $chosenPort = $p
+      break
+    } catch {
+      continue
+    } finally {
+      if($tcp){ try { $tcp.Stop() } catch {} }
+    }
+  }
+  if($chosenPort){ break }
+}
+if(-not $chosenPort){
+  Fail 30 'No free port in 8080–8199.' 'Close apps using those ports or adjust the range inside tools/Start-CRM.ps1.'
+}
+
+# --------------- HttpListener setup with URL ACL handling ---------------
+try { Add-Type -AssemblyName System.Net.HttpListener | Out-Null } catch {}
+try { Add-Type -AssemblyName System.Web | Out-Null } catch {}
+
+$prefixes = @(
+  "http://127.0.0.1:$chosenPort/",
+  "http://localhost:$chosenPort/",
+  "http://+:$chosenPort/"
+)
+$listener = [System.Net.HttpListener]::new()
+$script:Listener = $listener
+$selectedPrefix = $null
+$lastErr = $null
+
+function Test-Prefix {
+  param(
+    [System.Net.HttpListener]$Listener,
+    [string]$Prefix
+  )
+  try {
+    $Listener.Prefixes.Clear()
+    $null = $Listener.Prefixes.Add($Prefix)
+    $Listener.Start()
+    $Listener.Stop()
+    return $true
+  } catch {
+    $global:__lastListenerError = $_
+    return $false
+  }
+}
+
+foreach($prefix in $prefixes){
+  if(Test-Prefix -Listener $listener -Prefix $prefix){
+    $selectedPrefix = $prefix
+    break
+  }
+  $lastErr = $global:__lastListenerError
+  if($lastErr -and ($lastErr.Exception.Message -match 'Access is denied' -or $lastErr.Exception.Message -match 'denied')){
+    if(Is-Admin){
+      try {
+        & netsh http add urlacl url=$prefix user="$env:UserDomain\$env:UserName" listen=yes | Out-Null
+        if(Test-Prefix -Listener $listener -Prefix $prefix){
+          $selectedPrefix = $prefix
+          break
+        }
+      } catch {
+        $lastErr = $_
+      }
+    } else {
+      Say 'URLACL required. Elevating to grant permission for this port…' 'WARN'
+      $aclCommand = "& { netsh http add urlacl url='" + $prefix + "' user='" + $env:UserDomain + "\\" + $env:UserName + "' listen=yes }"
+      try {
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-Command', $aclCommand) -Wait
+        if(Test-Prefix -Listener $listener -Prefix $prefix){
+          $selectedPrefix = $prefix
+          break
+        }
+      } catch {
+        $lastErr = $_
       }
     }
-    Send-File `$ctx `$fs
   }
-} catch { }
-"@
-
-Say "Starting embedded static server"
-$Args = @('-NoProfile','-ExecutionPolicy','Bypass','-Command',$ServerScript)
-$Proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $Args -WorkingDirectory $RepoRoot `
-        -PassThru -NoNewWindow -RedirectStandardOutput $StdOut -RedirectStandardError $StdErr
-
-Start-Sleep -Milliseconds 300
-if (-not $Proc -or $Proc.HasExited) {
-  Fail 40 "Failed to start embedded static server." ("Open logs:`n  $StdOut`n  $StdErr`nIf Anti-Virus blocks HttpListener, allow PowerShell for loopback or run as admin.")
 }
 
-# Ready poll (200 + HTML), up to 20 tries
-$ready = $false
-for ($i=0; $i -lt 20; $i++) {
+if(-not $selectedPrefix){
+  $message = if($lastErr){ $lastErr.Exception.Message } else { 'Unknown binding failure' }
+  Fail 40 "HttpListener could not bind to any prefix for port $chosenPort. $message" 'If prompted, accept the UAC dialog. Otherwise run once as admin, or let the script add URLACL automatically. Corporate AV may block loopback; allow PowerShell loopback.'
+}
+
+$listener.Prefixes.Clear()
+$null = $listener.Prefixes.Add($selectedPrefix)
+try {
+  $listener.Start()
+} catch {
+  Fail 40 "Failed to start server: $($_.Exception.Message)" 'Temporarily disable AV loopback blocking or run once as admin to add URLACL, then retry.'
+}
+
+# --------------- MIME map ---------------
+$Mime = @{
+  '.html'='text/html'; '.htm'='text/html'; '.css'='text/css'; '.js'='application/javascript';
+  '.mjs'='application/javascript'; '.map'='application/json'; '.json'='application/json';
+  '.svg'='image/svg+xml'; '.png'='image/png'; '.jpg'='image/jpeg'; '.jpeg'='image/jpeg';
+  '.gif'='image/gif'; '.ico'='image/x-icon'; '.webmanifest'='application/manifest+json';
+  '.txt'='text/plain'; '.csv'='text/csv'; '.wasm'='application/wasm';
+  '.woff'='font/woff'; '.woff2'='font/woff2'; '.ttf'='font/ttf';
+  '.mp4'='video/mp4'; '.webm'='video/webm'
+}
+
+# --------------- start server loop on background runspace ---------------
+$serverScript = @'
+param(
+  [System.Net.HttpListener]$listener,
+  [string]$webRoot,
+  [hashtable]$mimeMap,
+  [string]$stdoutLog,
+  [string]$stderrLog
+)
+
+function Write-ServerLog {
+  param(
+    [string]$Path,
+    [string]$Line
+  )
+  if([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Line)){ return }
   try {
-    $r = Invoke-WebRequest -UseBasicParsing -Uri $IndexUrl -TimeoutSec 1
-    if ($r.StatusCode -eq 200 -and ($r.Content -match '<html' -or $r.RawContentLength -gt 800)) { $ready = $true; break }
-  } catch { Start-Sleep -Milliseconds 500 }
-}
-if (-not $ready) {
-  Fail 41 "Server did not return 200/HTML for $IndexUrl within timeout." ("Check for console errors in devtools once served; verify index.html loads standalone by hitting $BaseUrl then /index.html. See:`n  $StdOut`n  $StdErr")
+    [System.IO.File]::AppendAllText($Path, $Line + [Environment]::NewLine)
+  } catch {}
 }
 
-Say "Ready check OK → $IndexUrl"
+function Get-MimeType {
+  param(
+    [string]$FilePath,
+    [hashtable]$Map
+  )
+  $ext = [System.IO.Path]::GetExtension($FilePath)
+  if($ext){ $ext = $ext.ToLowerInvariant() }
+  if($ext -and $Map.ContainsKey($ext)){ return $Map[$ext] }
+  return 'application/octet-stream'
+}
 
-# Open browser
-if (-not $NoBrowser) {
-  $Opened = $false
-  $c1="${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
-  $c2="${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-  $e1="${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-  $e2="${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe"
-  foreach ($b in @($c1,$c2,$e1,$e2)) {
-    if (-not $Opened -and (Test-Path -LiteralPath $b)) {
-      Start-Process -FilePath $b -ArgumentList @('--new-window',$IndexUrl) | Out-Null
-      $Opened = $true
+while($listener.IsListening){
+  $context = $null
+  try {
+    $context = $listener.GetContext()
+    $rawPath = $context.Request.Url.AbsolutePath
+    $decoded = [Uri]::UnescapeDataString($rawPath).TrimStart('/')
+    if([string]::IsNullOrWhiteSpace($decoded)){ $decoded = 'index.html' }
+    if($decoded.EndsWith('/')){ $decoded = $decoded + 'index.html' }
+    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($webRoot, $decoded))
+    $rootFull = [System.IO.Path]::GetFullPath($webRoot)
+    $servingPath = $null
+    if($candidate.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase) -and [System.IO.File]::Exists($candidate)){
+      $servingPath = $candidate
+    } else {
+      $altDir = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($webRoot, $decoded))
+      if($altDir.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase) -and [System.IO.Directory]::Exists($altDir)){
+        $possible = [System.IO.Path]::Combine($altDir, 'index.html')
+        $possibleFull = [System.IO.Path]::GetFullPath($possible)
+        if($possibleFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase) -and [System.IO.File]::Exists($possibleFull)){
+          $servingPath = $possibleFull
+        }
+      }
+    }
+
+    if($servingPath){
+      $bytes = [System.IO.File]::ReadAllBytes($servingPath)
+      $context.Response.StatusCode = 200
+      $context.Response.ContentType = Get-MimeType -FilePath $servingPath -Map $mimeMap
+      $context.Response.Headers['Cache-Control'] = 'no-cache'
+      $context.Response.ContentLength64 = $bytes.Length
+      $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+    } else {
+      $context.Response.StatusCode = 404
+    }
+  } catch [System.Net.HttpListenerException] {
+    break
+  } catch {
+    $errorLine = "{0:u} [SERVER] {1}" -f [DateTime]::UtcNow, $_.Exception.Message
+    Write-ServerLog -Path $stderrLog -Line $errorLine
+    if($context -and $context.Response){
+      try { $context.Response.StatusCode = 500 } catch {}
+    }
+  } finally {
+    if($context){
+      try { $context.Response.OutputStream.Close() } catch {}
+      try { $context.Response.Close() } catch {}
     }
   }
-  if (-not $Opened) {
-    try { Start-Process $IndexUrl | Out-Null; $Opened=$true } catch { }
-  }
-  if (-not $Opened) { Fail 50 "Unable to open a browser to $IndexUrl." "Open manually: $IndexUrl" }
-  Say "Browser launched → $IndexUrl"
-} else {
-  Say "No-browser mode: server at $BaseUrl"
+}
+'@
+
+$serverRunspace = [runspacefactory]::CreateRunspace()
+$serverRunspace.ApartmentState = 'MTA'
+$serverRunspace.Open()
+$script:ServerRunspace = $serverRunspace
+$psInstance = [PowerShell]::Create()
+$psInstance.Runspace = $serverRunspace
+$null = $psInstance.AddScript($serverScript)
+$null = $psInstance.AddArgument($listener)
+$null = $psInstance.AddArgument($WebRoot)
+$null = $psInstance.AddArgument($Mime)
+$null = $psInstance.AddArgument($StdOut)
+$null = $psInstance.AddArgument($StdErr)
+$script:ServerPowerShell = $psInstance
+$script:ServerAsync = $psInstance.BeginInvoke()
+
+$LaunchPrefix = $selectedPrefix
+if($LaunchPrefix.StartsWith('http://+:')){
+  $LaunchPrefix = "http://127.0.0.1:$chosenPort/"
+}
+$BaseUrl  = $LaunchPrefix
+$IndexUrl = "${BaseUrl}index.html?cb=" + ([Guid]::NewGuid().ToString('N'))
+
+if(-not (Test-Path -LiteralPath $Index)){
+  Fail 10 'index.html vanished before launch.' 'Re-extract crm-app and retry.'
 }
 
-Say "stdout -> $StdOut"
-Say "stderr -> $StdErr"
+# --------------- readiness probe ---------------
+$ready = $false
+for($i = 0; $i -lt 20; $i++){
+  try {
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri $IndexUrl -TimeoutSec 2
+    if($resp.StatusCode -eq 200 -and ($resp.Content -match '<html' -or $resp.RawContentLength -gt 800)){
+      $ready = $true
+      break
+    }
+  } catch {
+    Start-Sleep -Milliseconds 250
+  }
+}
+if(-not $ready){
+  Say 'Server started, but readiness check timed out. Opening anyway…' 'WARN'
+}
 
-# Keep parent window while server runs
-try { while (-not $Proc.HasExited) { Start-Sleep -Milliseconds 500 } } finally { }
+# --------------- launch browser ---------------
+$opened = $false
+$browserPaths = @(
+  "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+  "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+  "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+  "${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe"
+)
+foreach($browser in $browserPaths){
+  if(-not $opened -and -not [string]::IsNullOrEmpty($browser) -and (Test-Path -LiteralPath $browser)){
+    try {
+      Start-Process -FilePath $browser -ArgumentList @('--new-window', $IndexUrl) | Out-Null
+      $opened = $true
+    } catch {}
+  }
+}
+if(-not $opened){
+  try {
+    Start-Process $IndexUrl | Out-Null
+    $opened = $true
+  } catch {}
+}
+if(-not $opened){
+  $fileUrl = (Get-Item -LiteralPath $Index).FullName
+  Say 'Browser HTTP launch failed; opening file:// fallback (feature-limited).' 'WARN'
+  try {
+    Start-Process $fileUrl | Out-Null
+    $opened = $true
+  } catch {}
+  if(-not $opened){
+    Fail 50 'Could not open a browser automatically.' "Copy and paste into a browser: $IndexUrl   (or)   $fileUrl"
+  }
+}
 
-try { Stop-Transcript | Out-Null } catch { }
+Say "Server up at $BaseUrl" 'OK'
+Say "Browser launched → $IndexUrl" 'OK'
+Write-Host ''
+Say 'Press Ctrl+C to stop the server when you are finished.' 'INFO'
+
+try {
+  while($true){ Start-Sleep -Seconds 1 }
+} finally {
+  Cleanup
+}
+
 exit 0
