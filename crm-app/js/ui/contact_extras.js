@@ -79,20 +79,97 @@
     }
   }
 
+  function contactIdFromDetail(detail) {
+    if (!detail || typeof detail !== "object") return null;
+    if (detail.contact && typeof detail.contact === "object" && detail.contact.id != null) {
+      return String(detail.contact.id);
+    }
+    if (detail.contactId != null) return String(detail.contactId);
+    if (detail.detail && typeof detail.detail === "object") {
+      const nested = contactIdFromDetail(detail.detail);
+      if (nested) return nested;
+    }
+    const scope = String(detail.scope || detail.entity || "").toLowerCase();
+    if ((scope === "contact" || scope === "contacts") && detail.id != null) {
+      return String(detail.id);
+    }
+    return null;
+  }
+
+  function activeContactId() {
+    try {
+      if (typeof document === "undefined") return null;
+      const root = document.querySelector('[data-view="contact"]');
+      const modal = document.querySelector('#contact-modal');
+      const attr =
+        (root && root.getAttribute && root.getAttribute("data-contact-id")) ||
+        (modal && modal.getAttribute && modal.getAttribute("data-contact-id"));
+      if (attr) return String(attr);
+    } catch (_) {}
+    if (typeof window !== "undefined" && window.__ACTIVE_CONTACT_ID__) return String(window.__ACTIVE_CONTACT_ID__);
+    return null;
+  }
+
+  async function resolveContact(detail) {
+    if (detail && typeof detail === "object" && detail.contact && typeof detail.contact === "object") {
+      return detail.contact;
+    }
+    const id = contactIdFromDetail(detail) || activeContactId();
+    if (!id) return null;
+    if (typeof window !== "undefined" && typeof window.dbGet === "function") {
+      try {
+        return await window.dbGet("contacts", id);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function shouldHandle(detail, raw) {
+    if (!detail) return false;
+    if (typeof detail === "object") {
+      if (detail.contact || detail.contactId != null) return true;
+      const scope = String(detail.scope || detail.entity || "").toLowerCase();
+      if (scope === "contact" || scope === "contacts") return true;
+      const text = [detail.reason, detail.topic, detail.type, detail.action, detail.source]
+        .filter(Boolean)
+        .map((v) => String(v))
+        .join(" ");
+      if (/contact/i.test(text)) return true;
+    }
+    if (raw && /contact/i.test(raw)) return true;
+    return false;
+  }
+
+  async function refresh(detail) {
+    try {
+      const contact = await resolveContact(detail);
+      if (contact) render(contact);
+    } catch (_) {}
+  }
+
   const orig = window.dispatchAppDataChanged;
   window.dispatchAppDataChanged = function patched(reason) {
-    const r = String(reason || "");
     const out = orig ? orig.apply(this, arguments) : undefined;
+    const raw = String(reason || "");
+    const detail = typeof reason === "object" ? reason : { reason: raw };
     try {
-      if (/contact/i.test(r)) {
-        const c = typeof window.getActiveContact === "function" ? window.getActiveContact() : null;
-        if (c) render(c);
-      }
+      if (shouldHandle(detail, raw)) refresh(detail);
     } catch (_) {}
     return out;
   };
 
   injectPanel();
-  const initContact = typeof window.getActiveContact === "function" ? window.getActiveContact() : null;
-  if (initContact) render(initContact);
+  refresh();
+
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("contact:stageHistory:updated", (event) => {
+      try {
+        const detail = event && event.detail ? event.detail : {};
+        if (detail.contact) render(detail.contact);
+        else refresh(detail);
+      } catch (_) {}
+    });
+  }
 })();
