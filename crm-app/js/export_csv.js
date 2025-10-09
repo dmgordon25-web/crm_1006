@@ -174,7 +174,7 @@
   function filterRowsBySelection(rows, kind, selection) {
     if (!Array.isArray(rows)) return [];
     const ids = Array.isArray(selection?.ids) ? selection.ids : [];
-    if (!ids.length) return rows;
+    if (!ids.length) return [];
     const dataset = normalizeDataset(kind) || 'contacts';
     const lookup = new Set(
       ids
@@ -186,9 +186,6 @@
       const rowId = resolveRowId(row, dataset);
       return rowId ? lookup.has(rowId) : false;
     });
-    if (!filtered.length) {
-      console.warn('CSV export selection had no matching rows; exporting empty set');
-    }
     return filtered;
   }
 
@@ -252,11 +249,25 @@
   async function onExport(ev) {
     ev?.preventDefault?.();
     const selection = getSelectionSnapshot();
+    const selectionIds = Array.isArray(selection?.ids)
+      ? selection.ids
+          .map((id) => (id == null ? '' : String(id)))
+          .filter((id) => id !== '')
+      : [];
+    if (!selectionIds.length) {
+      console.warn('CSV export blocked: no selected rows to export');
+      return;
+    }
     const selectionKind = normalizeDataset(selection?.type);
     const kind = selectionKind || inferDataset();
+    const normalizedSelection = { ids: selectionIds, type: selectionKind || kind };
     try {
       const rows = await pullRows(kind);
-      const filtered = filterRowsBySelection(rows, kind, selection);
+      const filtered = filterRowsBySelection(rows, kind, normalizedSelection);
+      if (!filtered.length) {
+        console.warn('CSV export blocked: no rows matched the current selection');
+        return;
+      }
       const csv = toCsv(filtered);
       const ymd = new Date().toISOString().slice(0, 10);
       const filename = `CRM_${kind.toUpperCase()}_${ymd}.csv`;
