@@ -79,6 +79,36 @@
     }
   }
 
+  function extractDispatchDetail(argsLike) {
+    const args = Array.prototype.slice.call(argsLike || []);
+    let raw = "";
+    let detail = null;
+    for (const arg of args) {
+      if (arg == null) continue;
+      if (typeof arg === "string" && !raw) raw = arg;
+      if (typeof arg === "object") {
+        const looksLikeEvent =
+          Object.prototype.hasOwnProperty.call(arg || {}, "detail") &&
+          (Object.prototype.hasOwnProperty.call(arg, "target") ||
+            Object.prototype.hasOwnProperty.call(arg, "currentTarget") ||
+            typeof arg.type === "string");
+        if (looksLikeEvent) {
+          const inner = extractDispatchDetail([arg.detail]);
+          if (inner.detail || inner.raw) return inner;
+        }
+        if (!detail) detail = arg;
+        if (!raw) {
+          const text = [arg.reason, arg.topic, arg.type, arg.action, arg.source, arg.scope, arg.entity]
+            .filter((v) => typeof v === "string" && v)
+            .join(" ");
+          if (text) raw = text;
+        }
+      }
+    }
+    if (!detail && raw) detail = { reason: raw };
+    return { detail, raw };
+  }
+
   function contactIdFromDetail(detail) {
     if (!detail || typeof detail !== "object") return null;
     if (detail.contact && typeof detail.contact === "object" && detail.contact.id != null) {
@@ -150,12 +180,11 @@
   }
 
   const orig = window.dispatchAppDataChanged;
-  window.dispatchAppDataChanged = function patched(reason) {
+  window.dispatchAppDataChanged = function patched() {
     const out = orig ? orig.apply(this, arguments) : undefined;
-    const raw = String(reason || "");
-    const detail = typeof reason === "object" ? reason : { reason: raw };
     try {
-      if (shouldHandle(detail, raw)) refresh(detail);
+      const info = extractDispatchDetail(arguments);
+      if (shouldHandle(info.detail, info.raw)) refresh(info.detail);
     } catch (_) {}
     return out;
   };

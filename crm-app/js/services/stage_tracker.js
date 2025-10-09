@@ -46,6 +46,36 @@
     return false;
   }
 
+  function extractDispatchDetail(argsLike) {
+    const args = Array.prototype.slice.call(argsLike || []);
+    let raw = "";
+    let detail = null;
+    for (const arg of args) {
+      if (arg == null) continue;
+      if (typeof arg === "string" && !raw) raw = arg;
+      if (typeof arg === "object") {
+        const looksLikeEvent =
+          Object.prototype.hasOwnProperty.call(arg || {}, "detail") &&
+          (Object.prototype.hasOwnProperty.call(arg, "target") ||
+            Object.prototype.hasOwnProperty.call(arg, "currentTarget") ||
+            typeof arg.type === "string");
+        if (looksLikeEvent) {
+          const inner = extractDispatchDetail([arg.detail]);
+          if (inner.detail || inner.raw) return inner;
+        }
+        if (!detail) detail = arg;
+        if (!raw) {
+          const text = [arg.reason, arg.topic, arg.type, arg.action, arg.source, arg.scope, arg.entity]
+            .filter((v) => typeof v === "string" && v)
+            .join(" ");
+          if (text) raw = text;
+        }
+      }
+    }
+    if (!detail && raw) detail = { reason: raw };
+    return { detail, raw };
+  }
+
   async function resolveContact(detail) {
     if (!detail) return null;
     if (typeof detail === "object") {
@@ -88,9 +118,7 @@
     } catch (_) {}
   }
 
-  const onChanged = (payload) => {
-    const raw = String(payload || "");
-    const detail = typeof payload === "object" ? payload : { reason: raw };
+  const onChanged = (detail, raw) => {
     if (!shouldTrack(detail, raw)) return;
     (async () => {
       try {
@@ -103,10 +131,11 @@
   };
 
   const orig = window.dispatchAppDataChanged;
-  window.dispatchAppDataChanged = function patched(reason) {
+  window.dispatchAppDataChanged = function patched() {
     const out = orig ? orig.apply(this, arguments) : undefined;
     try {
-      onChanged(reason);
+      const info = extractDispatchDetail(arguments);
+      if (info.detail || info.raw) onChanged(info.detail, info.raw);
     } catch (_) {}
     return out;
   };
