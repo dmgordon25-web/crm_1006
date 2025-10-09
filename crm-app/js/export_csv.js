@@ -256,11 +256,10 @@
     const selection = getSelectionSnapshot();
     const selectionKind = normalizeDataset(selection?.type);
     const hasExplicitSelection = Array.isArray(selection?.ids) && selection.ids.length > 0;
-    const kind = hasExplicitSelection
-      ? selectionKind || inferDataset()
-      : selectionKind && selectionKind !== DEFAULT_SELECTION_KIND
-        ? selectionKind
-        : inferDataset();
+    const shouldTrustSelectionKind =
+      hasExplicitSelection ||
+      (selectionKind && selectionKind !== DEFAULT_SELECTION_KIND);
+    const kind = shouldTrustSelectionKind ? selectionKind || inferDataset() : inferDataset();
     try {
       const rows = await pullRows(kind);
       const filtered = filterRowsBySelection(rows, kind, selection);
