@@ -4,10 +4,9 @@
 
   // Namespace UUID (v5) based on a fixed DNS namespace + constant name.
   // Lightweight v5 impl (SHA-1) to avoid deps.
-  function sha1hex(str) {
-    const enc = new TextEncoder().encode(str);
+  function sha1hex(bytes) {
     return crypto.subtle
-      .digest("SHA-1", enc)
+      .digest("SHA-1", bytes)
       .then((b) =>
         Array.from(new Uint8Array(b))
           .map((x) => x.toString(16).padStart(2, "0"))
@@ -17,13 +16,17 @@
 
   async function uuidv5(name, ns) {
     // ns is canonical UUID; convert to bytes
-    const nsBytes = ns
-      .replace(/-/g, "")
-      .match(/.{1,2}/g)
-      .map((h) => parseInt(h, 16));
-    const nameBytes = Array.from(new TextEncoder().encode(name));
-    const bytes = new Uint8Array([...nsBytes, ...nameBytes]);
-    const hex = await sha1hex(String.fromCharCode(...bytes));
+    const nsBytes = new Uint8Array(
+      ns
+        .replace(/-/g, "")
+        .match(/.{1,2}/g)
+        .map((h) => parseInt(h, 16))
+    );
+    const nameBytes = new TextEncoder().encode(name);
+    const bytes = new Uint8Array(nsBytes.length + nameBytes.length);
+    bytes.set(nsBytes, 0);
+    bytes.set(nameBytes, nsBytes.length);
+    const hex = await sha1hex(bytes);
     const parts = [
       hex.slice(0, 8),
       hex.slice(8, 12),
