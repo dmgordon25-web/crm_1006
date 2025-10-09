@@ -110,7 +110,7 @@
     bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin:8px 0 12px 0;';
 
     bar.innerHTML = `
-      <input type="search" placeholder="Search documents…" data-f="q" style="flex:1;min-width:180px;">
+      <input type="search" placeholder="Search documents..." data-f="q" style="flex:1;min-width:180px;">
       <select data-f="type">
         <option value="">All types</option>
         <option value="pdf">PDF</option>

@@ -770,6 +770,41 @@
     updateActionBarGuards(0);
   }
 
+  let longShotsPending = false;
+
+  async function ensureLongShotsMounted(){
+    if(longShotsPending) return;
+    longShotsPending = true;
+    try{
+      const mod = await import('/js/pages/longshots.js');
+      const mount = typeof mod.mountLongShots === 'function'
+        ? mod.mountLongShots
+        : (typeof mod.default === 'function' ? mod.default : null);
+      if(typeof mount === 'function') mount();
+    }catch(err){
+      console.error('[longshots] mount failed', err);
+    }finally{
+      longShotsPending = false;
+    }
+  }
+
+  function goLongshots(opts){
+    const options = opts && typeof opts === 'object' ? opts : {};
+    if(options.updateHash === true){
+      try{
+        if(typeof window !== 'undefined' && window.history && typeof window.history.replaceState === 'function'){
+          window.history.replaceState(null, '', '#/longshots');
+        }else if(typeof window !== 'undefined'){
+          window.location.hash = '#/longshots';
+        }
+      }catch(_err){
+        if(typeof window !== 'undefined') window.location.hash = '#/longshots';
+      }
+    }
+    activate('longshots');
+    ensureLongShotsMounted();
+  }
+
   const DEFAULT_ROUTE = 'dashboard';
   const settingsButton = document.getElementById('btn-open-settings');
   const titleLink = document.getElementById('app-title-link');
@@ -795,6 +830,9 @@
           : '';
         if(currentHash === '#workbench' || currentHash === '#/workbench'){
           bypass = true;
+        }else if(currentHash === '#/longshots' || currentHash === '#longshots'){
+          goLongshots();
+          return;
         }else if(currentHash !== canonicalHash){
           if(window.history && typeof window.history.replaceState === 'function'){
             window.history.replaceState(null, document.title, canonicalHash);
@@ -819,7 +857,20 @@
     const navTarget = btn.getAttribute('data-nav');
     if(navTarget === 'workbench') return;
     e.preventDefault();
+    if(navTarget === 'longshots'){
+      goLongshots({ updateHash: true });
+      return;
+    }
     activate(navTarget);
+  });
+
+  window.addEventListener('hashchange', () => {
+    const hash = window.location && typeof window.location.hash === 'string'
+      ? window.location.hash
+      : '';
+    if(hash === '#/longshots' || hash === '#longshots'){
+      goLongshots();
+    }
   });
 
   (function wireWorkbenchNav(){

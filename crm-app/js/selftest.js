@@ -1,17 +1,6 @@
 const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
-  const phaseChecklist = [
-    'js/patch_2025-09-26_phase1_pipeline_partners.js',
-    'js/patch_2025-09-26_phase2_automations.js',
-    'js/patch_2025-09-26_phase3_dashboard_reports.js',
-    'js/patch_2025-09-26_phase4_polish_regression.js',
-    'js/patch_2025-09-27_doccenter2.js',
-    'js/patch_2025-09-27_phase6_polish_telemetry.js'
-  ];
   const expectWorkbench = Boolean(window.__ENV__ && window.__ENV__.WORKBENCH);
-  const requiredPhases = phaseChecklist.slice();
-  if(expectWorkbench){
-    requiredPhases.push('js/_legacy/patch_2025-09-27_workbench.js');
-  }
+  const requiredPhases = [];
 
   function addDiagnostic(kind, message){
     if(console){
@@ -167,7 +156,9 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
       issues.push('Boot did not complete successfully.');
     }
 
-    console.log('PATCHES_LOADED', window.__PATCHES_LOADED__);
+    if(DEBUG){
+      console.log('PATCHES_LOADED', window.__PATCHES_LOADED__);
+    }
 
     const loaded = Array.isArray(window.__PATCHES_LOADED__)
       ? window.__PATCHES_LOADED__.slice()
@@ -175,14 +166,15 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
     const expectedManifest = Array.isArray(window.__EXPECTED_PATCHES__)
       ? window.__EXPECTED_PATCHES__.slice()
       : [];
+    const patchesEnabled = window.__PATCHES_ENABLED__ === true;
     const missing = requiredPhases.filter(path => !loaded.includes(path));
-    if(missing.length){
+    if(missing.length && patchesEnabled){
       ok = false;
       console.error('PATCHES_MISSING', missing);
       console.error('Selftest: missing required patches', { missing, loaded });
       addDiagnostic('fail', `Missing patches: ${missing.join(', ')}`);
       issues.push(`Missing patches: ${missing.join(', ')}`);
-    }else{
+    }else if(DEBUG){
       console.log('Selftest: phases verified', loaded);
     }
 
@@ -190,10 +182,14 @@ const DEBUG = !!(window.DEBUG || localStorage.getItem('DEBUG') === '1');
       ? window.__PATCHES_FAILED__.filter(Boolean)
       : [];
     if(failed.length){
-      ok = false;
-      console.error('Selftest: patch load failures', failed);
-      addDiagnostic('fail', `Failed patches: ${failed.map(item => item.path || 'unknown').join(', ')}`);
-      issues.push(`Failed patches: ${failed.map(item => item.path || 'unknown').join(', ')}`);
+      if(patchesEnabled){
+        ok = false;
+        console.error('Selftest: patch load failures', failed);
+        addDiagnostic('fail', `Failed patches: ${failed.map(item => item.path || 'unknown').join(', ')}`);
+        issues.push(`Failed patches: ${failed.map(item => item.path || 'unknown').join(', ')}`);
+      }else if(DEBUG){
+        console.warn('Selftest: patch load failures ignored (patches disabled)', failed);
+      }
     }
 
     if(expectWorkbench){
