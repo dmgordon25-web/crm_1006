@@ -1,28 +1,10 @@
-/* crm-app/js/boot/manifest.js
- * Authoritative boot manifest for SafeBoot. Patches are OFF by default.
- * To temporarily enable patches for dev: add ?patches=on OR localStorage['crm:patches']='on'
- */
+/* crm-app/js/boot/manifest.js — Phase 2: two-entry startup */
 export const CORE = [
-  // Keep core in strict, deterministic order. Most dependent services first.
-  "/js/env.js",
-  "/js/db.js",
-  "/js/db_compat.js",
-  "/js/core/renderGuard.js",
-  "/js/services/selection.js",
-  "/js/utils.js",
-  "/js/render.js",
-  "/js/ui/Toast.js",
-  "/js/ui/Confirm.js",
-  "/js/data/settings.js",
-  "/js/migrations.js",
-  "/js/presets.js",
-  "/js/services/pipelineStages.js",
-  "/js/services/softDelete.js",
-  // Add more core modules HERE if absolutely required by baseline tabs,
-  // but do not include any dated patch files.
+  "/js/app.core.js",
+  "/js/app.main.js",
 ];
 
-// SAFEBOOT DEFAULT: no patches are loaded unless explicitly enabled via query/localStorage.
+// SAFEBOOT DEFAULT: runtime patches remain disabled unless explicitly opted-in.
 export const PATCHES = [];
 
 export default { CORE, PATCHES };
