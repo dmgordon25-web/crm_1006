@@ -38,3 +38,6 @@ import "./ui/contact_extras.js";
 import "./ui/print_cards.js";
 
 // Nothing exported. Sequence ensures deterministic wiring.
+import "./services/uuidv5_none_partner.js";
+import "./services/snapshot.js";
+import "./importer_hardening.js";

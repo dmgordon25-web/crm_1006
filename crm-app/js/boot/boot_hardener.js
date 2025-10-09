@@ -144,4 +144,9 @@ export async function ensureCoreThenPatches({ CORE, PATCHES }) {
   window.__BOOT_OK__ = true;
   const coreCount = CORE.length;
   green(`Boot OK — CORE:${coreCount}, PATCHES:${patchesLoaded}`);
+
+  // Quiet counters for diagnostics (no UI chrome)
+  window.__DIAG__ =
+    window.__DIAG__ ||
+    { boot: { fail: 0 }, import: { runs: 0, contacts: 0, partners: 0 } };
 }
