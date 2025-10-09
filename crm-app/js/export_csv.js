@@ -63,6 +63,13 @@
     return normalized;
   }
 
+  function normalizeDataset(value) {
+    const key = String(value || "").toLowerCase();
+    if (key === "partner" || key === "partners") return "partners";
+    if (key === "contact" || key === "contacts") return "contacts";
+    return "";
+  }
+
   function inferDataset() {
     const scopeAttr = document.body?.getAttribute?.('data-scope') || '';
     if (/partner/i.test(scopeAttr)) return 'partners';
@@ -83,6 +90,163 @@
     if (/partner/i.test(tabKey)) return 'partners';
 
     return 'contacts';
+  }
+
+  function getSelectionSnapshot() {
+    const svc =
+      window.selectionService || window.SelectionService || window.Selection || null;
+    if (!svc) return null;
+
+    const wrap = (snap) => {
+      if (!snap || typeof snap !== 'object') return null;
+      let ids = [];
+      if (Array.isArray(snap.ids)) {
+        ids = snap.ids.slice();
+      } else if (snap.ids && typeof snap.ids.forEach === 'function') {
+        const next = [];
+        snap.ids.forEach((value) => next.push(value));
+        ids = next;
+      }
+      const type = snap.type || snap.scope || (typeof svc.type === 'string' ? svc.type : '');
+      const rows = Array.isArray(snap.rows)
+        ? snap.rows.filter((row) => row && typeof row === 'object')
+        : [];
+      let items = null;
+      if (snap.items && typeof snap.items.forEach === 'function') {
+        const map = new Map();
+        try {
+          snap.items.forEach((value, key) => {
+            map.set(key, value);
+          });
+        } catch (err) {
+          console.warn('CSV export selection items clone failed', err);
+        }
+        if (map.size) items = map;
+      }
+      return { ids, type, rows, items };
+    };
+
+    try {
+      if (typeof svc.snapshot === 'function') {
+        const snap = svc.snapshot();
+        const wrapped = wrap(snap);
+        if (wrapped) return wrapped;
+      }
+    } catch (err) {
+      console.warn('CSV export selection snapshot failed', err);
+    }
+
+    try {
+      if (typeof svc.get === 'function') {
+        const snap = svc.get();
+        const wrapped = wrap(snap);
+        if (wrapped) return wrapped;
+      }
+    } catch (err) {
+      console.warn('CSV export selection get() failed', err);
+    }
+
+    let ids = [];
+    try {
+      if (typeof svc.getIds === 'function') {
+        ids = svc.getIds();
+      } else if (typeof svc.getSelectedIds === 'function') {
+        ids = svc.getSelectedIds();
+      }
+    } catch (err) {
+      console.warn('CSV export selection ids failed', err);
+    }
+
+    const normalizedIds = Array.isArray(ids)
+      ? ids
+      : ids && typeof ids.forEach === 'function'
+        ? (() => {
+            const next = [];
+            ids.forEach((value) => next.push(value));
+            return next;
+          })()
+        : [];
+    const fallbackItems = svc.items && typeof svc.items.forEach === 'function'
+      ? (() => {
+          const map = new Map();
+          try {
+            svc.items.forEach((value, key) => {
+              map.set(key, value);
+            });
+          } catch (err) {
+            console.warn('CSV export selection items fallback clone failed', err);
+          }
+          return map.size ? map : null;
+        })()
+      : null;
+    const snapshot = wrap({ ids: normalizedIds, type: svc.type, items: fallbackItems });
+    return snapshot;
+  }
+
+  const CONTACT_ID_KEYS = new Set(['id', 'contactid', 'contact_id', 'uuid', 'guid']);
+  const PARTNER_ID_KEYS = new Set(['id', 'partnerid', 'partner_id', 'uuid', 'guid']);
+
+  function resolveRowId(row, kind) {
+    if (!row || typeof row !== 'object') return null;
+    const dataset = kind === 'partners' ? PARTNER_ID_KEYS : CONTACT_ID_KEYS;
+    for (const key of Object.keys(row)) {
+      const lower = String(key || '').toLowerCase();
+      if (!dataset.has(lower)) continue;
+      const value = row[key];
+      if (value == null || value === '') continue;
+      return String(value);
+    }
+    return null;
+  }
+
+  function filterRowsBySelection(rows, kind, selection) {
+    if (!Array.isArray(rows)) return [];
+    const ids = Array.isArray(selection?.ids) ? selection.ids : [];
+    if (!ids.length) return [];
+    const dataset = normalizeDataset(kind) || 'contacts';
+    const lookup = new Set(
+      ids
+        .map((id) => (id == null ? '' : String(id)))
+        .filter((id) => id !== '')
+    );
+    if (!lookup.size) return [];
+    const filtered = rows.filter((row) => {
+      const rowId = resolveRowId(row, dataset);
+      return rowId ? lookup.has(rowId) : false;
+    });
+    return filtered;
+  }
+
+  function selectionRowsFromSnapshot(selection) {
+    if (!selection) return [];
+    const rows = [];
+    const append = (value) => {
+      if (value && typeof value === 'object') rows.push(value);
+    };
+
+    if (Array.isArray(selection.rows)) {
+      selection.rows.forEach(append);
+    }
+
+    const items = selection.items;
+    if (items && typeof items.forEach === 'function') {
+      items.forEach((value) => append(value));
+    }
+
+    return rows;
+  }
+
+  async function getRowsForSelection(kind, selection) {
+    const direct = selectionRowsFromSnapshot(selection);
+    if (direct.length) {
+      const filtered = filterRowsBySelection(direct, kind, selection);
+      if (filtered.length === selection.ids.length) {
+        return filtered;
+      }
+    }
+
+    const rows = await pullRows(kind);
+    return filterRowsBySelection(rows, kind, selection);
   }
 
   async function pullRows(kind) {
@@ -144,10 +308,36 @@
 
   async function onExport(ev) {
     ev?.preventDefault?.();
-    const kind = inferDataset();
+    const selection = getSelectionSnapshot();
+    const selectionIds = Array.isArray(selection?.ids)
+      ? selection.ids
+          .map((id) => (id == null ? '' : String(id)))
+          .filter((id) => id !== '')
+      : [];
+    if (!selectionIds.length) {
+      console.warn('CSV export blocked: no selected rows to export');
+      return;
+    }
+    const selectionKind = normalizeDataset(selection?.type);
+    const kind = selectionKind || inferDataset();
+    const normalizedSelection = {
+      ids: selectionIds,
+      type: selectionKind || kind,
+      rows: Array.isArray(selection?.rows)
+        ? selection.rows.filter((row) => row && typeof row === 'object')
+        : [],
+      items:
+        selection?.items && typeof selection.items.forEach === 'function'
+          ? selection.items
+          : null,
+    };
     try {
-      const rows = await pullRows(kind);
-      const csv = toCsv(rows);
+      const filtered = await getRowsForSelection(kind, normalizedSelection);
+      if (!filtered.length) {
+        console.warn('CSV export blocked: no rows matched the current selection');
+        return;
+      }
+      const csv = toCsv(filtered);
       const ymd = new Date().toISOString().slice(0, 10);
       const version = window.__APP_VERSION__;
       const filename = `CRM_${version?.tag || 'vFinal'}_${
