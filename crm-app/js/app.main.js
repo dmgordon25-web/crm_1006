@@ -5,6 +5,7 @@
 
 import "./services/version.js";
 import "./qa/smoke.js";
+import "./quickstart.js";
 
 // Contacts & Partners (lists, details, merge, stage tracker)
 import "./contacts.js";

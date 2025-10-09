@@ -1,5 +1,0 @@
-id,severity,repro,suspected,file,line,proposed
-render.js:ellipsis,H,Load file,Ellipsis placeholder found,render.js,1,Replace with valid code
-importer.js:ellipsis,H,Load file,Ellipsis placeholder found,importer.js,1,Replace with valid code
-selftest.js:ellipsis,H,Load file,Ellipsis placeholder found,selftest.js,1,Replace with valid code
-kanban.js:ellipsis,H,Load file,Ellipsis placeholder found,kanban.js,1,Replace with valid code

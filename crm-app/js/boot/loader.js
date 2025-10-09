@@ -23,6 +23,11 @@ async function bootstrap() {
       // Any exception here is a fatal boot error
       throw err;
     }
+
+    try {
+      const v = window.__APP_VERSION__?.toString?.() || "";
+      if (v) console.info(`[CRM] ${v}`);
+    } catch {}
   }
 }
 
