@@ -27,7 +27,14 @@ async function bootstrap() {
 }
 
 // Kick it off (no other side effects here)
-bootstrap().catch((err) => {
+const bootMainPromise = bootstrap();
+
+// Restore SafeBoot bridge: index.html listens for this assignment in order to
+// resolve the gated dispatch queue once boot completes. The promise reference
+// must be exposed before attaching catch handlers so the setter fires.
+window.__BOOT_LOADER_MAIN__ = bootMainPromise;
+
+bootMainPromise.catch((err) => {
   // Last-chance guard: ensure a visible failure in strict mode
   // boot_hardener.fatal() handles overlay; here we only log.
   console.error("[BOOT:UNHANDLED]", err);
