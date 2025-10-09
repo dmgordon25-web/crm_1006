@@ -1,6 +1,6 @@
 
 // partners.js — partner modal wiring & selection helpers
-import { debounce } from './patch_2025-10-02_baseline_ux_cleanup.js';
+import { debounce } from './services/utils.js';
 
 (function(){
   if(!window.__INIT_FLAGS__) window.__INIT_FLAGS__ = {};

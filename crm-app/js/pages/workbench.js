@@ -1,4 +1,4 @@
-import { doubleRaf } from '../patch_2025-10-02_baseline_ux_cleanup.js';
+import { doubleRaf } from '../services/utils.js';
 
 let lastMount = null;
 let selectionListener = null;

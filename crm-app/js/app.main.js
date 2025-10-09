@@ -28,7 +28,6 @@ import "./ical.js";
 
 // Documents / Reports
 import "./doccenter_rules.js";
-import "./documents.js";
 import "./reports.js";
 
 // Misc feature modules (safe to import after core)
@@ -45,3 +44,40 @@ import "./ui/print_cards.js";
 import "./services/uuidv5_none_partner.js";
 import "./services/snapshot.js";
 import "./importer_hardening.js";
+import { seedLongShots } from "./seed/seed_longshots.js";
+
+async function bootstrapLongShotsSeed() {
+  if (typeof window === "undefined") return;
+  const env = window.__ENV__ || {};
+  const devEnabled = env.DEMO === true || env.DEBUG === true;
+  let shouldRun = devEnabled;
+  try {
+    if (typeof localStorage !== "undefined") {
+      let flag = localStorage.getItem("crm:seed");
+      if (flag === null) {
+        localStorage.setItem("crm:seed", "1");
+        flag = "1";
+      }
+      if (flag === "0") {
+        shouldRun = false;
+      } else if (flag === "1" || flag === "true") {
+        shouldRun = true;
+      }
+    }
+  } catch (_err) {
+    shouldRun = shouldRun || devEnabled;
+  }
+
+  if (!shouldRun) return;
+
+  try {
+    const changed = await seedLongShots(window.db || null);
+    if (changed && typeof window.dispatchAppDataChanged === "function") {
+      window.dispatchAppDataChanged({ source: "seed:longshots" });
+    }
+  } catch (err) {
+    console.warn("[seed:longshots] failed", err);
+  }
+}
+
+bootstrapLongShotsSeed();
