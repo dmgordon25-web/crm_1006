@@ -1176,6 +1176,25 @@ import {
   }
 
   window.renderAll = renderAll;
+  (function(){
+    const orig = window.renderAll;
+    if (typeof orig === "function" && !window.__WIRED_renderDiag) {
+      window.__WIRED_renderDiag = true;
+      window.renderAll = function () {
+        try {
+          const diag = window.__DIAG__ || (window.__DIAG__ = {});
+          const render =
+            diag.render && typeof diag.render === "object"
+              ? diag.render
+              : (diag.render = {});
+          if (typeof render.paints !== "number") render.paints = 0;
+          if (typeof render.jank !== "number") render.jank = render.jank || 0;
+          render.paints += 1;
+        } catch (_err) {}
+        return orig.apply(this, arguments);
+      };
+    }
+  })();
   window.renderPartners = async function(){
     await openDB();
     const partners = await dbGetAll('partners');

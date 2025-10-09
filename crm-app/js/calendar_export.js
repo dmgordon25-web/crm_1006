@@ -218,7 +218,10 @@
       if (!ics) return;
       const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
       const ymd = new Date().toISOString().slice(0, 10);
-      const name = `CRM_Calendar_${ymd}.ics`;
+      const version = window.__APP_VERSION__;
+      const name = `CRM_${version?.tag || 'vFinal'}_${
+        version?.ymd || ymd
+      }_Calendar.ics`;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = name;

@@ -49,9 +49,12 @@
       type: "application/json;charset=utf-8",
     });
     const ymd = new Date().toISOString().slice(0, 10);
+    const version = window.__APP_VERSION__;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `CRM_snapshot_${ymd}.json`;
+    a.download = `CRM_${version?.tag || "vFinal"}_${
+      version?.ymd || ymd
+    }_snapshot.json`;
     document.body.appendChild(a);
     a.click();
     URL.revokeObjectURL(a.href);

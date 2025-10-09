@@ -3,6 +3,9 @@
  * Keep this list deterministic. DO NOT import dated patch files here.
  */
 
+import "./services/version.js";
+import "./qa/smoke.js";
+
 // Contacts & Partners (lists, details, merge, stage tracker)
 import "./contacts.js";
 import "./contacts_merge.js";
