@@ -46,7 +46,7 @@ $url = "http://127.0.0.1:$port/"
 # Launch server
 if ($useNode) {
   Log "Launching Node static server via $nodeExe"
-  $args = @("$serverJs","--root",$webRoot,"--port","$port")
+  $args = @("$serverJs",$webRoot,"$port")
   # IMPORTANT: RedirectStandardOutput and RedirectStandardError must be DIFFERENT files
   $proc = Start-Process -FilePath $nodeExe -ArgumentList $args -WorkingDirectory $repoRoot `
           -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
