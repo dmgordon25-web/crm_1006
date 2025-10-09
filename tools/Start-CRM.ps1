@@ -25,7 +25,18 @@ function Say([string]$m,[string]$lvl='INFO') {
   Write-Host "$ts [$lvl] $m" -ForegroundColor $fg
 }
 
+function Stop-ServerProcess {
+  if ($script:ServerProcess -and -not $script:ServerProcess.HasExited) {
+    try {
+      Stop-Process -Id $script:ServerProcess.Id -ErrorAction SilentlyContinue | Out-Null
+    } catch { }
+    try { $script:ServerProcess.Dispose() } catch { }
+  }
+  $script:ServerProcess = $null
+}
+
 function Fail([int]$code,[string]$reason,[string]$resolution) {
+  Stop-ServerProcess
   Say "CODE $code — $reason" 'ERROR'
   if ($resolution) {
     Write-Host 'Resolution:' -ForegroundColor Yellow
@@ -257,6 +268,7 @@ try {
   Invoke-Main
 } catch {
   $message = $_.Exception.Message
+  Stop-ServerProcess
   $logs = @()
   if ($env:CRM_RUNLOG) { $logs += $env:CRM_RUNLOG }
   if ($script:StdOutPath) { $logs += $script:StdOutPath }
