@@ -10,6 +10,7 @@ import "./contact_stage_tracker.js";
 
 import "./partners.js";
 import "./partners_merge.js";
+import "./ui/actionbar.js";
 
 // Pipeline / Kanban / Dashboard
 import "./pipeline/kanban_dnd.js";
@@ -18,6 +19,7 @@ import "./dashboard/widgets_dnd.js";
 // Calendar / ICS
 import "./calendar.js";
 import "./calendar_ics.js";
+import "./calendar_export.js";
 import "./ical.js";
 
 // Documents / Reports
@@ -28,5 +30,6 @@ import "./reports.js";
 // Misc feature modules (safe to import after core)
 import "./notifications.js";
 import "./importer.js";
+import "./export_csv.js";
 
 // Nothing exported. Sequence ensures deterministic wiring.
