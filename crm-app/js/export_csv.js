@@ -149,7 +149,10 @@
       const rows = await pullRows(kind);
       const csv = toCsv(rows);
       const ymd = new Date().toISOString().slice(0, 10);
-      const filename = `CRM_${kind.toUpperCase()}_${ymd}.csv`;
+      const version = window.__APP_VERSION__;
+      const filename = `CRM_${version?.tag || 'vFinal'}_${
+        version?.ymd || ymd
+      }_${kind.toUpperCase()}.csv`;
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);

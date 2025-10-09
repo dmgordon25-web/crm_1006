@@ -6,6 +6,33 @@
 const q = new URLSearchParams(location.search);
 const LS = window.localStorage;
 
+function ensureDiag() {
+  const diag = window.__DIAG__ || {};
+
+  const boot =
+    diag.boot && typeof diag.boot === "object" ? diag.boot : (diag.boot = {});
+  if (typeof boot.fail !== "number") boot.fail = 0;
+  if (typeof boot.ok !== "number") boot.ok = 0;
+  if (typeof boot.modulesFail !== "number") boot.modulesFail = 0;
+
+  const render =
+    diag.render && typeof diag.render === "object"
+      ? diag.render
+      : (diag.render = {});
+  if (typeof render.paints !== "number") render.paints = 0;
+  if (typeof render.jank !== "number") render.jank = 0;
+
+  const importer =
+    diag.import && typeof diag.import === "object"
+      ? diag.import
+      : (diag.import = { runs: 0, contacts: 0, partners: 0 });
+  if (typeof importer.runs !== "number") importer.runs = 0;
+  if (typeof importer.contacts !== "number") importer.contacts = 0;
+  if (typeof importer.partners !== "number") importer.partners = 0;
+
+  return (window.__DIAG__ = diag);
+}
+
 // Flags (sticky via localStorage if caller wants):
 const STRICT = q.get("strict") === "1" || LS.getItem("crm:strictBoot") === "1";
 const PATCHES_ENABLED =
@@ -56,6 +83,9 @@ function showFailOverlay(code, detail) {
 }
 
 function fatal(code, err) {
+  try {
+    ensureDiag().boot.fail += 1;
+  } catch (_err) {}
   red("[BOOT:FATAL]", code, err?.message || err);
   if (STRICT) {
     try { showFailOverlay(code, (err && (err.stack || err.message)) || err); }
@@ -94,6 +124,9 @@ async function importOne(url) {
     const resolved = resolveUrl(url);
     return await import(resolved);
   } catch (err) {
+    try {
+      ensureDiag().boot.modulesFail += 1;
+    } catch (_err) {}
     fatal("E-MODULE-IMPORT:" + url, err);
   }
 }
@@ -146,7 +179,46 @@ export async function ensureCoreThenPatches({ CORE, PATCHES }) {
   green(`Boot OK — CORE:${coreCount}, PATCHES:${patchesLoaded}`);
 
   // Quiet counters for diagnostics (no UI chrome)
-  window.__DIAG__ =
-    window.__DIAG__ ||
-    { boot: { fail: 0 }, import: { runs: 0, contacts: 0, partners: 0 } };
+  const diag = ensureDiag();
+  diag.boot.ok += 1;
+
+  window.__DIAG__ = diag;
+
+  // DEV-only badge (opt-in via ?badge=1 or localStorage['crm:badge']='1')
+  const BADGE = q.get("badge") === "1" || LS.getItem("crm:badge") === "1";
+  if (BADGE) {
+    const b = document.createElement("div");
+    b.textContent = "Boot OK";
+    b.style.cssText =
+      "position:fixed;right:8px;bottom:8px;background:#10b981;color:#071e14;padding:6px 10px;border-radius:999px;font:12px system-ui;z-index:99999";
+    document.body.appendChild(b);
+    setTimeout(() => b.remove(), 2500);
+  }
+
+  // Jank sentinel (measure long tasks > 120ms over 3s window; log one WARN)
+  (function () {
+    if (!("PerformanceObserver" in window)) return;
+    try {
+      let flagged = false;
+      const obs = new PerformanceObserver((list) => {
+        let long = 0;
+        list.getEntries().forEach((e) => {
+          if (e.duration >= 120) long++;
+        });
+        if (long > 0) {
+          try {
+            ensureDiag().render.jank += long;
+          } catch (_err) {}
+          if (!flagged) {
+            flagged = true;
+            console.warn(
+              `[Perf] Long tasks detected: ${long} in recent interval`
+            );
+          }
+        }
+      });
+      obs.observe({ entryTypes: ["longtask"] });
+      setTimeout(() => obs.disconnect(), 3000); // short burst during boot only
+    } catch (_err) {}
+  })();
 }
