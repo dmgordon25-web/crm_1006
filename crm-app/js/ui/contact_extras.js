@@ -89,17 +89,27 @@
     return null;
   }
 
+  let fetchGeneration = 0;
+
   function fetchAndRender(id) {
     if (!id) return;
-    if (!shouldRenderFor(id)) return;
+    const targetId = String(id);
+    if (!shouldRenderFor(targetId)) return;
+    const generation = ++fetchGeneration;
     if (typeof window.dbGet === "function") {
-      Promise.resolve(window.dbGet("contacts", String(id)))
-        .then((contact) => { if (contact) render(contact); })
+      Promise.resolve(window.dbGet("contacts", targetId))
+        .then((contact) => {
+          if (!contact) return;
+          if (generation !== fetchGeneration) return;
+          if (!shouldRenderFor(contact.id != null ? contact.id : targetId)) return;
+          render(contact);
+        })
         .catch(() => {});
       return;
     }
     const fallback = typeof window.getActiveContact === "function" ? window.getActiveContact() : null;
-    if (fallback && String(fallback.id) === String(id)) render(fallback);
+    if (generation !== fetchGeneration) return;
+    if (fallback && String(fallback.id) === targetId && shouldRenderFor(targetId)) render(fallback);
   }
 
   function render(contact) {
