@@ -63,6 +63,13 @@
     return normalized;
   }
 
+  function normalizeDataset(value) {
+    const key = String(value || "").toLowerCase();
+    if (key === "partner" || key === "partners") return "partners";
+    if (key === "contact" || key === "contacts") return "contacts";
+    return "";
+  }
+
   function inferDataset() {
     const scopeAttr = document.body?.getAttribute?.('data-scope') || '';
     if (/partner/i.test(scopeAttr)) return 'partners';
@@ -83,6 +90,106 @@
     if (/partner/i.test(tabKey)) return 'partners';
 
     return 'contacts';
+  }
+
+  function getSelectionSnapshot() {
+    const svc =
+      window.selectionService || window.SelectionService || window.Selection || null;
+    if (!svc) return null;
+
+    const wrap = (snap) => {
+      if (!snap || typeof snap !== 'object') return null;
+      let ids = [];
+      if (Array.isArray(snap.ids)) {
+        ids = snap.ids.slice();
+      } else if (snap.ids && typeof snap.ids.forEach === 'function') {
+        const next = [];
+        snap.ids.forEach((value) => next.push(value));
+        ids = next;
+      }
+      const type = snap.type || snap.scope || (typeof svc.type === 'string' ? svc.type : '');
+      return { ids, type };
+    };
+
+    try {
+      if (typeof svc.snapshot === 'function') {
+        const snap = svc.snapshot();
+        const wrapped = wrap(snap);
+        if (wrapped) return wrapped;
+      }
+    } catch (err) {
+      console.warn('CSV export selection snapshot failed', err);
+    }
+
+    try {
+      if (typeof svc.get === 'function') {
+        const snap = svc.get();
+        const wrapped = wrap(snap);
+        if (wrapped) return wrapped;
+      }
+    } catch (err) {
+      console.warn('CSV export selection get() failed', err);
+    }
+
+    let ids = [];
+    try {
+      if (typeof svc.getIds === 'function') {
+        ids = svc.getIds();
+      } else if (typeof svc.getSelectedIds === 'function') {
+        ids = svc.getSelectedIds();
+      }
+    } catch (err) {
+      console.warn('CSV export selection ids failed', err);
+    }
+
+    const normalizedIds = Array.isArray(ids)
+      ? ids
+      : ids && typeof ids.forEach === 'function'
+        ? (() => {
+            const next = [];
+            ids.forEach((value) => next.push(value));
+            return next;
+          })()
+        : [];
+    const snapshot = wrap({ ids: normalizedIds, type: svc.type });
+    return snapshot;
+  }
+
+  const CONTACT_ID_KEYS = new Set(['id', 'contactid', 'contact_id', 'uuid', 'guid']);
+  const PARTNER_ID_KEYS = new Set(['id', 'partnerid', 'partner_id', 'uuid', 'guid']);
+
+  function resolveRowId(row, kind) {
+    if (!row || typeof row !== 'object') return null;
+    const dataset = kind === 'partners' ? PARTNER_ID_KEYS : CONTACT_ID_KEYS;
+    for (const key of Object.keys(row)) {
+      const lower = String(key || '').toLowerCase();
+      if (!dataset.has(lower)) continue;
+      const value = row[key];
+      if (value == null || value === '') continue;
+      return String(value);
+    }
+    return null;
+  }
+
+  function filterRowsBySelection(rows, kind, selection) {
+    if (!Array.isArray(rows)) return [];
+    const ids = Array.isArray(selection?.ids) ? selection.ids : [];
+    if (!ids.length) return rows;
+    const dataset = normalizeDataset(kind) || 'contacts';
+    const lookup = new Set(
+      ids
+        .map((id) => (id == null ? '' : String(id)))
+        .filter((id) => id !== '')
+    );
+    if (!lookup.size) return rows;
+    const filtered = rows.filter((row) => {
+      const rowId = resolveRowId(row, dataset);
+      return rowId ? lookup.has(rowId) : false;
+    });
+    if (!filtered.length) {
+      console.warn('CSV export selection had no matching rows; exporting empty set');
+    }
+    return filtered;
   }
 
   async function pullRows(kind) {
@@ -144,10 +251,13 @@
 
   async function onExport(ev) {
     ev?.preventDefault?.();
-    const kind = inferDataset();
+    const selection = getSelectionSnapshot();
+    const selectionKind = normalizeDataset(selection?.type);
+    const kind = selectionKind || inferDataset();
     try {
       const rows = await pullRows(kind);
-      const csv = toCsv(rows);
+      const filtered = filterRowsBySelection(rows, kind, selection);
+      const csv = toCsv(filtered);
       const ymd = new Date().toISOString().slice(0, 10);
       const filename = `CRM_${kind.toUpperCase()}_${ymd}.csv`;
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
