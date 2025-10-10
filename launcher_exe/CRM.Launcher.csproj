@@ -11,16 +11,20 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <DebugType>none</DebugType>
     <AssemblyName>CRM</AssemblyName>
+    <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Embed everything from crm-app/ inside the EXE -->
     <EmbeddedResource Include="..\crm-app\**\*.*">
       <LogicalName>crm-app/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+      <Link>crm-app/%(RecursiveDir)%(Filename)%(Extension)</Link>
     </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="8.0.8" />
     <PackageReference Include="Microsoft.AspNetCore.App.Ref" Version="8.0.0" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
