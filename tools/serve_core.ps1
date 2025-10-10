@@ -1,5 +1,13 @@
 # Lightweight server only (not used by default). For manual debug.
 param([int]$Port=8080)
+
+# ---- ASCII GUARD (do not remove) ----
+try {
+  $__bytes = [System.IO.File]::ReadAllBytes($MyInvocation.MyCommand.Path)
+  foreach($__b in $__bytes){ if($__b -gt 127){ Write-Host "ASCII-GUARD: Non-ASCII bytes detected in $($MyInvocation.MyCommand.Name)" -ForegroundColor Red; exit 3 } }
+} catch { }
+# ---- END ASCII GUARD ----
+
 $ErrorActionPreference='Stop'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WebRoot  = (Resolve-Path (Join-Path $RepoRoot 'crm-app')).Path

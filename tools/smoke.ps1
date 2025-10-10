@@ -5,6 +5,13 @@ param(
   [int]$TimeoutMs = 8000
 )
 $ErrorActionPreference='Stop'
+
+# ---- ASCII GUARD (do not remove) ----
+try {
+  $__bytes = [System.IO.File]::ReadAllBytes($MyInvocation.MyCommand.Path)
+  foreach($__b in $__bytes){ if($__b -gt 127){ Write-Host "ASCII-GUARD: Non-ASCII bytes detected in $($MyInvocation.MyCommand.Name)" -ForegroundColor Red; exit 3 } }
+} catch { }
+# ---- END ASCII GUARD ----
 function Say([string]$m,[string]$lvl='INFO'){ $ts=(Get-Date).ToString('HH:mm:ss'); Write-Host "$ts [$lvl] $m" }
 if(-not $Url -and -not $File){ Say 'smoke: need -Url or -File' 'ERROR'; exit 2 }
 $target = $Url; if($File){ $full=(Resolve-Path $File).Path; if(-not (Test-Path $full)){ Say "smoke: file missing $full" 'ERROR'; exit 2 }; $target = "file:///$($full -replace '\\','/')" }
