@@ -13,6 +13,7 @@ if errorlevel 1 (
 echo [INFO] Publishing self-contained single-file EXE...
 if exist dist rd /s /q dist
 mkdir dist
+if not exist dist mkdir dist
 set PUBLISH_LOG=%TEMP%\crm_launcher_publish.log
 if exist "%PUBLISH_LOG%" del "%PUBLISH_LOG%"
 dotnet publish launcher_exe\CRM.Launcher.csproj -c Release -r win-x64 ^
@@ -32,11 +33,17 @@ if %PUBRESULT% NEQ 0 (
   exit /b 3
 )
 if exist dist\aspnetcorev2_inprocess.dll del /f /q dist\aspnetcorev2_inprocess.dll
+if %PUBRESULT% NEQ 0 (
+  echo [ERROR] Build failed. See %PUBLISH_LOG% for details.
+  exit /b 3
+)
+copy /Y "%PUBLISH_LOG%" dist\publish.log >nul 2>nul
 if not exist dist\CRM.exe (
   echo [ERROR] Expected dist\CRM.exe not found.
   exit /b 4
 )
 echo [OK] Built dist\CRM.exe
 if exist dist\publish.log echo [INFO] Publish log copied to dist\publish.log
+echo [INFO] Publish log copied to dist\publish.log
 popd
 endlocal
