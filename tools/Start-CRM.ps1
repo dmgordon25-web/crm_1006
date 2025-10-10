@@ -1,3 +1,10 @@
+# ---- ASCII GUARD (do not remove) ----
+try {
+  $__bytes = [System.IO.File]::ReadAllBytes($MyInvocation.MyCommand.Path)
+  foreach($__b in $__bytes){ if($__b -gt 127){ Write-Host "ASCII-GUARD: Non-ASCII bytes detected in $($MyInvocation.MyCommand.Name)" -ForegroundColor Red; exit 3 } }
+} catch { }
+# ---- END ASCII GUARD ----
+
 $ErrorActionPreference = 'Stop'
 
 function Say([string]$msg,[string]$lvl='INFO'){
